@@ -10,6 +10,15 @@ const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin']
 export const metadata: Metadata = {
   title: 'Suppamas Growth Engine',
   description: 'ระบบติดตามการเรียนรู้ โรงเรียนอนุสรณ์ศุภมาศ',
+  openGraph: {
+    title: 'Suppamas Growth Engine — ไฟจราจรแห่งการเรียนรู้',
+    description: 'นวัตกรรม EdTech ที่รวม Pacing · พฤติกรรม · ปพ.5/ปพ.6 ในที่เดียว',
+    images: [{ url: '/og-image.png', width: 1200, height: 630 }],
+  },
+  icons: {
+    icon: '/logo.png',
+    apple: '/logo.png',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

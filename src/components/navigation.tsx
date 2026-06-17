@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { BookOpen, ClipboardList, BarChart3, BookCheck, Trophy } from 'lucide-react'
 
@@ -23,9 +24,19 @@ export function Navigation() {
     <>
       {/* Top header */}
       <header className="bg-white border-b border-gray-200 px-4 py-3 print:hidden">
-        <div className="max-w-2xl mx-auto">
-          <h1 className="text-sm font-bold text-gray-800">🌱 Suppamas Growth Engine</h1>
-          <p className="text-xs text-gray-500">โรงเรียนอนุสรณ์ศุภมาศ</p>
+        <div className="max-w-2xl mx-auto flex items-center gap-2.5">
+          <Image
+            src="/logo.png"
+            alt="Suppamas Growth Engine"
+            width={32}
+            height={32}
+            className="rounded-lg flex-shrink-0"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+          />
+          <div>
+            <h1 className="text-sm font-bold text-gray-800">Suppamas Growth Engine</h1>
+            <p className="text-xs text-gray-500">โรงเรียนอนุสรณ์ศุภมาศ</p>
+          </div>
         </div>
       </header>
 
