@@ -109,7 +109,7 @@ export default function AssessmentPage() {
         supabase.from('students').select('*').eq('school_id', schoolId).order('class_name').order('student_number'),
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
         supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
-        supabase.from('academic_settings').select('*').eq('school_id', schoolId).single(),
+        supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
       ])
       setStudents(stds ?? [])
       setModules(mods ?? [])

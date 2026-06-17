@@ -53,7 +53,7 @@ export default function Pp6PrintPage() {
         supabase.from('homework_submissions').select('*').eq('school_id', schoolId),
         supabase.from('trait_ratings').select('*').eq('school_id', schoolId),
         supabase.from('attendance').select('*').eq('school_id', schoolId),
-        supabase.from('academic_settings').select('*').eq('school_id', schoolId).single(),
+        supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
       ])
       const allStudents = (stds ?? []) as Student[]
       const roomList = Array.from(new Set(allStudents.map(s => s.class_name).filter(Boolean))).sort()

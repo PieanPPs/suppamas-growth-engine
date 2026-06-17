@@ -21,7 +21,7 @@ export default function SettingsPage() {
   useEffect(() => {
     async function load() {
       const [{ data: st }, { data: sc }, { data: allSc }] = await Promise.all([
-        supabase.from('academic_settings').select('*').eq('school_id', schoolId).single(),
+        supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
         supabase.from('schools').select('*').eq('id', schoolId).single(),
         supabase.from('schools').select('*').order('name'),
       ])

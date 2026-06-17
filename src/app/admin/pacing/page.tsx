@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
+import { getSchoolId } from '@/lib/school'
 import {
   CurriculumModule, PacingLog, StudentAssessment, PlanSubmission, AcademicSettings,
   Indicator, ModuleIndicator, Test, TestScore,
@@ -28,6 +29,7 @@ const STATUS_META = {
 
 export default function CrossTrackingPage() {
   const supabase = createClient()
+  const schoolId = getSchoolId()
   const [rows, setRows] = useState<CrossRow[]>([])
   const [currentWeek, setCurrentWeek] = useState(0)
   const [coverage, setCoverage] = useState<Coverage | null>(null)
@@ -45,7 +47,7 @@ export default function CrossTrackingPage() {
         supabase.from('pacing_logs').select('*'),
         supabase.from('student_assessments').select('*'),
         supabase.from('plan_submissions').select('*'),
-        supabase.from('academic_settings').select('*').eq('id', 1).single(),
+        supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
         supabase.from('indicators').select('*'),
         supabase.from('module_indicators').select('*'),
         supabase.from('tests').select('*'),

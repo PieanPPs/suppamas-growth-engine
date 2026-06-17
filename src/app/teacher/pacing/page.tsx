@@ -40,7 +40,7 @@ export default function PacingPage() {
   useEffect(() => {
     async function load() {
       const [{ data: s }, { data: mods }, { data: ts }, { data: tasks }, { data: assessments }, { data: students }] = await Promise.all([
-        supabase.from('academic_settings').select('*').eq('school_id', schoolId).single(),
+        supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('subject').order('sequence_order', { nullsFirst: false }),
         supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
         supabase.from('homework_tasks').select('*').eq('school_id', schoolId),

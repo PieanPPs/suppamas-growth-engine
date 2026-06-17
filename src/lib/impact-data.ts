@@ -1,4 +1,5 @@
 import { createClient } from './supabase/client'
+import { getSchoolId } from './school'
 import {
   StudentAssessment, HomeworkSubmission, PacingLog, PlanSubmission,
   CurriculumModule, AcademicSettings, Indicator, ModuleIndicator,
@@ -33,6 +34,7 @@ export interface ImpactData {
 
 export async function loadImpact(): Promise<ImpactData> {
   const supabase = createClient()
+  const schoolId = getSchoolId()
   const [
     { data: assessments }, { data: homework }, { data: pacings }, { data: plans },
     { data: modules }, { data: settings }, { data: students }, { data: teachers },
@@ -43,7 +45,7 @@ export async function loadImpact(): Promise<ImpactData> {
     supabase.from('pacing_logs').select('*'),
     supabase.from('plan_submissions').select('*'),
     supabase.from('curriculum_modules').select('*'),
-    supabase.from('academic_settings').select('*').eq('id', 1).single(),
+    supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
     supabase.from('students').select('id'),
     supabase.from('teachers').select('id'),
     supabase.from('classrooms').select('id'),

@@ -57,7 +57,7 @@ export default function CurriculumPage() {
     async function init() {
       const [{ data: cs }, { data: settings }] = await Promise.all([
         supabase.from('courses').select('*').eq('school_id', schoolId).order('name'),
-        supabase.from('academic_settings').select('total_weeks').eq('school_id', schoolId).single(),
+        supabase.from('academic_settings').select('total_weeks').eq('school_id', schoolId).maybeSingle(),
       ])
       setCourses((cs ?? []) as Course[])
       setTotalWeeks((settings as AcademicSettings)?.total_weeks ?? 20)
