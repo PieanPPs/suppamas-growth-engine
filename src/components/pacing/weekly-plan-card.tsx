@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { CurriculumModule, PacingLog, PacingStatus, PlanSubmission, HomeworkTask } from '@/lib/types'
 import { weekOfLesson } from '@/lib/pacing'
+import { getSchoolId } from '@/lib/school'
 import {
   CheckCircle2, Clock, AlertTriangle, Loader2, Link2, Upload, FileText,
   ExternalLink, Layers, ClipboardList, Star, ChevronRight, Sparkles, Save,
@@ -45,6 +46,7 @@ export function WeeklyPlanCard({
   onOpenExitTicket: (moduleId: string) => void
 }) {
   const supabase = createClient()
+  const schoolId = getSchoolId()
   const [plan, setPlan] = useState<PlanSubmission | undefined>(initialPlan)
   const [pacing, setPacing] = useState<PacingLog | undefined>(initialPacing)
 
@@ -89,6 +91,7 @@ export function WeeklyPlanCard({
       .from('plan_submissions')
       .upsert(
         {
+          school_id: schoolId,
           teacher_id: teacherId,
           module_id: module.id,
           plan_name: planName || null,
@@ -107,7 +110,7 @@ export function WeeklyPlanCard({
     if (homework.trim()) {
       await supabase
         .from('homework_tasks')
-        .upsert({ module_id: module.id, title: homework.trim() }, { onConflict: 'module_id' })
+        .upsert({ school_id: schoolId, module_id: module.id, title: homework.trim() }, { onConflict: 'module_id' })
     }
 
     setSaving(false)
@@ -125,7 +128,7 @@ export function WeeklyPlanCard({
     } else {
       const { data } = await supabase
         .from('pacing_logs')
-        .insert({ teacher_id: teacherId, module_id: module.id, status })
+        .insert({ school_id: schoolId, teacher_id: teacherId, module_id: module.id, status })
         .select()
         .single()
       if (data) setPacing(data as PacingLog)
