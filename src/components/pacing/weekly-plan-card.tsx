@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { CurriculumModule, PacingLog, PacingStatus, PlanSubmission, HomeworkTask } from '@/lib/types'
@@ -70,6 +70,23 @@ export function WeeklyPlanCard({
   const [showRoutine, setShowRoutine] = useState(
     !!(plan?.routine_hook || plan?.routine_core || plan?.routine_active || plan?.routine_exit)
   )
+  // sync form fields when plan loads asynchronously from parent
+  const syncedRef = useRef(false)
+  useEffect(() => {
+    if (initialPlan && !syncedRef.current) {
+      syncedRef.current = true
+      setPlanName(initialPlan.plan_name ?? '')
+      setSummary(initialPlan.summary_note ?? '')
+      setLink(initialPlan.material_link ?? '')
+      setRoutine({
+        routine_hook: initialPlan.routine_hook ?? '',
+        routine_core: initialPlan.routine_core ?? '',
+        routine_active: initialPlan.routine_active ?? '',
+        routine_exit: initialPlan.routine_exit ?? '',
+      })
+    }
+  }, [initialPlan])
+
   const [saving, setSaving] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
   const [savingStatus, setSavingStatus] = useState(false)
