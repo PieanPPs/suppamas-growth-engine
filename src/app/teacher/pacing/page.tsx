@@ -106,14 +106,22 @@ export default function PacingPage() {
     Array.from(pacings.values()).filter(p => p.status === 'Completed').map(p => p.module_id)
   )
 
+  // filter by selected teacher's subjects (if teacher chosen)
+  const selectedTeacher = teacherId ? teachers.find(t => t.id === teacherId) : null
+  const teacherSubjects = selectedTeacher?.subjects?.length ? new Set(selectedTeacher.subjects) : null
+
+  const visibleModules = teacherSubjects
+    ? modules.filter(m => teacherSubjects.has(m.subject))
+    : modules
+
   // subjects + overall pacing
-  const subjects = Array.from(new Set(modules.map(m => m.subject)))
+  const subjects = Array.from(new Set(visibleModules.map(m => m.subject)))
   const subjectPacings = subjects.map(subject =>
-    computeSubjectPacing(subject, modules.filter(m => m.subject === subject), completedIds, currentWeek)
+    computeSubjectPacing(subject, visibleModules.filter(m => m.subject === subject), completedIds, currentWeek)
   )
 
   // modules active in the selected week, grouped by subject
-  const weekModules = modules.filter(m => weekOfLesson(m, selectedWeek) != null)
+  const weekModules = visibleModules.filter(m => weekOfLesson(m, selectedWeek) != null)
   const grouped = subjects
     .map(subject => ({ subject, mods: weekModules.filter(m => m.subject === subject) }))
     .filter(g => g.mods.length > 0)
