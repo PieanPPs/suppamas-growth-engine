@@ -126,8 +126,9 @@ ALTER TABLE indicators ALTER COLUMN school_id SET DEFAULT '00000000-0000-4000-a0
 ALTER TABLE indicators ALTER COLUMN school_id SET NOT NULL;
 -- subject+code unique ต่อโรงเรียน
 ALTER TABLE indicators DROP CONSTRAINT IF EXISTS indicators_subject_code_key;
+DROP INDEX IF EXISTS indicators_school_subject_code;
 CREATE UNIQUE INDEX IF NOT EXISTS indicators_school_subject_code
-  ON indicators (school_id, subject, code);
+  ON indicators (school_id, subject, standard, code);
 
 -- ---- tests ----
 ALTER TABLE tests ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id);

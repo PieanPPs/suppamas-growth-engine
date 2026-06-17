@@ -107,28 +107,39 @@ export default function CurriculumPage() {
     await reloadCourseData(subject)
   }
 
+  async function getExistingKeys() {
+    const { data } = await supabase.from('indicators').select('standard, code').eq('school_id', schoolId).eq('subject', subject)
+    return new Set((data ?? []).map(e => `${e.standard}|${e.code}`))
+  }
+
   // bulk add from central library (A) — copies into this course, skips existing
   async function addFromLibrary(libItems: IndicatorLibraryItem[]) {
+    const existing = await getExistingKeys()
     const base = indicators.length
-    const rows = libItems.map((it, idx) => ({
-      school_id: schoolId, subject, strand: it.strand, standard: it.standard, code: it.code,
-      description: it.description, type: it.type, key_concept: it.key_concept,
-      process: it.process, sequence_order: base + idx + 1,
-    }))
-    if (rows.length) await supabase.from('indicators').upsert(rows, { onConflict: 'school_id,subject,code', ignoreDuplicates: true })
+    const rows = libItems
+      .filter(it => !existing.has(`${it.standard}|${it.code}`))
+      .map((it, idx) => ({
+        school_id: schoolId, subject, strand: it.strand, standard: it.standard, code: it.code,
+        description: it.description, type: it.type, key_concept: it.key_concept,
+        process: it.process, sequence_order: base + idx + 1,
+      }))
+    if (rows.length) await supabase.from('indicators').insert(rows)
     await reloadCourseData(subject)
     setLibraryOpen(false)
   }
 
   // bulk import from pasted Excel/Sheets (B)
   async function importPasted(parsed: ParsedIndicator[]) {
+    const existing = await getExistingKeys()
     const base = indicators.length
-    const rows = parsed.map((r, idx) => ({
-      school_id: schoolId, subject, strand: null, standard: r.standard, code: r.code,
-      description: r.description, type: r.type, key_concept: r.key_concept,
-      process: r.process, sequence_order: base + idx + 1,
-    }))
-    if (rows.length) await supabase.from('indicators').upsert(rows, { onConflict: 'school_id,subject,code', ignoreDuplicates: true })
+    const rows = parsed
+      .filter(r => !existing.has(`${r.standard}|${r.code}`))
+      .map((r, idx) => ({
+        school_id: schoolId, subject, strand: null, standard: r.standard, code: r.code,
+        description: r.description, type: r.type, key_concept: r.key_concept,
+        process: r.process, sequence_order: base + idx + 1,
+      }))
+    if (rows.length) await supabase.from('indicators').insert(rows)
     await reloadCourseData(subject)
     setImportOpen(false)
   }
