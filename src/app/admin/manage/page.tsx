@@ -12,6 +12,10 @@ const sections = [
     title: 'Impact Dashboard', desc: 'หลักฐานก่อน-หลัง · รายงานผลการดำเนินงาน พิมพ์/PDF',
   },
   {
+    href: '/admin/promote', icon: GraduationCap, color: 'bg-blue-500',
+    title: 'เลื่อนชั้น / ประวัติรายปี', desc: 'บันทึกสิ้นปีการศึกษา · ดูพัฒนาการนักเรียนย้อนหลัง',
+  },
+  {
     href: '/admin/students/import', icon: UploadCloud, color: 'bg-blue-500',
     title: 'อัปโหลดรายชื่อนักเรียน', desc: 'นำเข้าไฟล์ Excel · แยกห้องอัตโนมัติ · อัปโหลดซ้ำได้',
   },
