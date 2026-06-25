@@ -148,7 +148,7 @@ export default function ImpactPage() {
       {/* Export CTA */}
       <Link href="/admin/impact/report"
         className="flex items-center justify-center gap-2 w-full bg-gray-900 hover:bg-black text-white text-sm font-semibold py-3.5 rounded-2xl transition-colors">
-        <Printer size={16} /> รายงานผลการดำเนินงาน 10 หัวข้อ (ฉบับส่งประกวด)
+        <Printer size={16} /> รายงานผลการดำเนินงาน 10 หัวข้อ
       </Link>
       <p className="text-[11px] text-gray-400 text-center -mt-2 flex items-center justify-center gap-1">
         <FileText size={11} /> เติมข้อมูลจริงจากระบบอัตโนมัติ · สั่งพิมพ์/บันทึก PDF ได้ทันที

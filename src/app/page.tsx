@@ -206,7 +206,7 @@ export default function ShowcasePage() {
         <div className="flex flex-col sm:flex-row gap-3 justify-center mt-6">
           <Link href="/admin/impact/report"
             className="inline-flex items-center justify-center gap-2 bg-white text-emerald-700 text-sm font-bold px-6 py-3 rounded-2xl hover:bg-gray-100 transition-colors">
-            <Flag size={15} /> รายงานฉบับส่งประกวด
+            <Flag size={15} /> รายงานผลการดำเนินงาน
           </Link>
           <Link href="/heroes"
             className="inline-flex items-center justify-center gap-2 bg-white/10 border border-white/25 text-white text-sm font-bold px-6 py-3 rounded-2xl hover:bg-white/20 transition-colors">
@@ -217,7 +217,7 @@ export default function ShowcasePage() {
 
       <footer className="text-center text-[11px] text-gray-400 space-y-1">
         <p className="flex items-center justify-center gap-1"><School size={12} /> โรงเรียนอนุสรณ์ศุภมาศ ต.ท่าทราย อ.เมืองสมุทรสาคร จ.สมุทรสาคร</p>
-        <p>🚦 ไฟจราจรแห่งการเรียนรู้ — Suppamas Growth Engine · การประกวดนวัตกรรมการศึกษาเพื่อการพัฒนาประเทศ ครั้งที่ 2 ปีการศึกษา 2569</p>
+        <p>🚦 ไฟจราจรแห่งการเรียนรู้ — Suppamas Growth Engine</p>
       </footer>
     </div>
   )

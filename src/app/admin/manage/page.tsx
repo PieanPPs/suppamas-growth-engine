@@ -9,7 +9,7 @@ import {
 const sections = [
   {
     href: '/admin/impact', icon: Flag, color: 'bg-orange-500',
-    title: 'Impact Dashboard (ส่งประกวด)', desc: 'หลักฐานก่อน-หลัง · รายงาน 10 หัวข้อ พิมพ์/PDF',
+    title: 'Impact Dashboard', desc: 'หลักฐานก่อน-หลัง · รายงานผลการดำเนินงาน พิมพ์/PDF',
   },
   {
     href: '/admin/students/import', icon: UploadCloud, color: 'bg-blue-500',

@@ -6,11 +6,12 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { Teacher, Classroom, Course } from '@/lib/types'
 import {
-  ArrowLeft, Loader2, Plus, Pencil, Trash2, X, Check, UserCog, GraduationCap, BookOpen,
+  ArrowLeft, Loader2, Plus, Pencil, Trash2, X, Check, UserCog, GraduationCap, BookOpen, AlertTriangle, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
 
 type TeacherRow = Teacher & { roomIds: string[] }
+interface SubjectInfo { subject: string; moduleCount: number }
 
 export default function TeachersPage() {
   const supabase = createClient()
@@ -18,20 +19,24 @@ export default function TeachersPage() {
   const [teachers, setTeachers] = useState<TeacherRow[]>([])
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [courses, setCourses] = useState<Course[]>([])
+  const [moduleSubjects, setModuleSubjects] = useState<SubjectInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  // editing state: null = closed, 'new' = adding, else teacher id
   const [editing, setEditing] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
   const [draftSubjects, setDraftSubjects] = useState<Set<string>>(new Set())
   const [draftRooms, setDraftRooms] = useState<Set<string>>(new Set())
+  const [showSubjectMgmt, setShowSubjectMgmt] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   async function load() {
-    const [{ data: ts }, { data: cs }, { data: crs }, { data: links }] = await Promise.all([
+    const [{ data: ts }, { data: cs }, { data: crs }, { data: links }, { data: mods }] = await Promise.all([
       supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('classrooms').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('courses').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('teacher_classrooms').select('*'),
+      supabase.from('curriculum_modules').select('subject').eq('school_id', schoolId),
     ])
     const linkMap = new Map<string, string[]>()
     ;(links ?? []).forEach((l: { teacher_id: string; classroom_id: string }) => {
@@ -41,9 +46,33 @@ export default function TeachersPage() {
     setTeachers(((ts ?? []) as Teacher[]).map(t => ({ ...t, roomIds: linkMap.get(t.id) ?? [] })))
     setClassrooms((cs ?? []) as Classroom[])
     setCourses((crs ?? []) as Course[])
+    // build subject list from curriculum_modules
+    const countMap = new Map<string, number>()
+    ;(mods ?? []).forEach((m: { subject: string }) => {
+      countMap.set(m.subject, (countMap.get(m.subject) ?? 0) + 1)
+    })
+    setModuleSubjects(
+      Array.from(countMap.entries())
+        .map(([subject, moduleCount]) => ({ subject, moduleCount }))
+        .sort((a, b) => a.subject.localeCompare(b.subject))
+    )
     setLoading(false)
   }
   useEffect(() => { load() }, [])
+
+  async function deleteSubject(subject: string) {
+    setDeleting(true)
+    await supabase.from('curriculum_modules').delete().eq('school_id', schoolId).eq('subject', subject)
+    // remove from all teachers' subjects arrays
+    const affected = teachers.filter(t => t.subjects?.includes(subject))
+    for (const t of affected) {
+      const newSubs = (t.subjects ?? []).filter(s => s !== subject)
+      await supabase.from('teachers').update({ subjects: newSubs }).eq('id', t.id)
+    }
+    setConfirmDelete(null)
+    setDeleting(false)
+    load()
+  }
 
   function openEdit(t?: TeacherRow) {
     setEditing(t ? t.id : 'new')
@@ -199,6 +228,60 @@ export default function TeachersPage() {
         ))}
         {teachers.length === 0 && (
           <p className="text-center text-sm text-gray-400 py-10">ยังไม่มีครูในระบบ — กดเพิ่มครูได้เลย</p>
+        )}
+      </div>
+
+      {/* Subject management section */}
+      <div className="border border-gray-200 rounded-2xl overflow-hidden mt-4">
+        <button
+          onClick={() => setShowSubjectMgmt(v => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <BookOpen size={16} className="text-orange-500" />
+            จัดการรายวิชา ({moduleSubjects.length} วิชา)
+          </span>
+          {showSubjectMgmt ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+        </button>
+
+        {showSubjectMgmt && (
+          <div className="px-4 py-3 space-y-2">
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-start gap-2">
+              <AlertTriangle size={13} className="mt-0.5 flex-shrink-0 text-amber-500" />
+              การลบวิชาจะลบ <strong>หน่วยการเรียนรู้ทั้งหมด</strong> ในวิชานั้นออกจากระบบอย่างถาวร และถอดวิชาออกจากครูที่ผูกไว้ด้วย
+            </p>
+            {moduleSubjects.map(({ subject, moduleCount }) => (
+              <div key={subject} className="flex items-center justify-between py-2.5 border-b border-gray-100 last:border-0">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">{subject.replace('_', ' ')}</p>
+                  <p className="text-xs text-gray-400">{moduleCount} หน่วยการเรียนรู้</p>
+                </div>
+                {confirmDelete === subject ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-red-600 font-medium">ยืนยันลบ?</span>
+                    <button
+                      onClick={() => deleteSubject(subject)}
+                      disabled={deleting}
+                      className="text-xs bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg font-semibold disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {deleting ? <Loader2 size={11} className="animate-spin" /> : null} ลบ
+                    </button>
+                    <button onClick={() => setConfirmDelete(null)} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200">ยกเลิก</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmDelete(subject)}
+                    className="flex items-center gap-1 text-xs text-red-500 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <Trash2 size={12} /> ลบวิชานี้
+                  </button>
+                )}
+              </div>
+            ))}
+            {moduleSubjects.length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-4">ไม่มีรายวิชาในระบบ</p>
+            )}
+          </div>
         )}
       </div>
     </div>
