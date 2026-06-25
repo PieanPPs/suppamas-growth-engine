@@ -80,12 +80,14 @@ export default function PacingPage() {
   }, [])
 
   useEffect(() => {
-    if (!teacherId) { setPlans(new Map()); setPacings(new Map()); return }
     async function loadTeacherData() {
-      const [{ data: pl }, { data: pc }] = await Promise.all([
-        supabase.from('plan_submissions').select('*').eq('school_id', schoolId).eq('teacher_id', teacherId),
-        supabase.from('pacing_logs').select('*').eq('school_id', schoolId).eq('teacher_id', teacherId),
-      ])
+      let plQ = supabase.from('plan_submissions').select('*').eq('school_id', schoolId)
+      let pcQ = supabase.from('pacing_logs').select('*').eq('school_id', schoolId)
+      if (teacherId) {
+        plQ = plQ.eq('teacher_id', teacherId)
+        pcQ = pcQ.eq('teacher_id', teacherId)
+      }
+      const [{ data: pl }, { data: pc }] = await Promise.all([plQ, pcQ])
       setPlans(new Map((pl ?? []).map((p: PlanSubmission) => [p.module_id, p])))
       setPacings(latestPacingByModule((pc ?? []) as PacingLog[]))
     }
