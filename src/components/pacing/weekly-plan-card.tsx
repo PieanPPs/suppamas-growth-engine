@@ -70,11 +70,12 @@ export function WeeklyPlanCard({
   const [showRoutine, setShowRoutine] = useState(
     !!(plan?.routine_hook || plan?.routine_core || plan?.routine_active || plan?.routine_exit)
   )
-  // sync form fields when plan loads asynchronously from parent
+  // sync form fields + plan state when parent loads async teacher data
   const syncedRef = useRef(false)
   useEffect(() => {
     if (initialPlan && !syncedRef.current) {
       syncedRef.current = true
+      setPlan(initialPlan)
       setPlanName(initialPlan.plan_name ?? '')
       setSummary(initialPlan.summary_note ?? '')
       setLink(initialPlan.material_link ?? '')
