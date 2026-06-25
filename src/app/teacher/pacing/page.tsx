@@ -93,8 +93,13 @@ export default function PacingPage() {
   }, [teacherId])
 
   function selectTeacher(id: string) {
-    setTeacherId(id)
-    localStorage.setItem(TEACHER_KEY, id)
+    if (id === '') {
+      setTeacherId(null)
+      localStorage.removeItem(TEACHER_KEY)
+    } else {
+      setTeacherId(id)
+      localStorage.setItem(TEACHER_KEY, id)
+    }
   }
 
   if (loading || !settings) {
@@ -138,7 +143,7 @@ export default function PacingPage() {
           onChange={e => selectTeacher(e.target.value)}
           className="w-full appearance-none bg-white border border-gray-200 rounded-2xl pl-10 pr-10 py-3 text-sm font-medium text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
         >
-          <option value="" disabled>เลือกชื่อครูผู้สอน...</option>
+          <option value="">แสดงทุกวิชา (ทั้งหมด)</option>
           {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
         <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
