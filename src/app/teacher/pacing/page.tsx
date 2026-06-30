@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import {
   CurriculumModule, PacingLog, PlanSubmission, AcademicSettings, Teacher,
-  HomeworkTask, StudentAssessment,
+  HomeworkTask, StudentAssessment, LessonPlan,
 } from '@/lib/types'
 import {
   currentAcademicWeek, computeSubjectPacing, weekOfLesson, latestPacingByModule,
@@ -15,6 +15,7 @@ import { TermBanner } from '@/components/pacing/term-banner'
 import { SubjectStatus } from '@/components/pacing/subject-status'
 import { WeekSelector } from '@/components/pacing/week-selector'
 import { WeeklyPlanCard } from '@/components/pacing/weekly-plan-card'
+import { LessonPlanPacingCard } from '@/components/pacing/lesson-plan-pacing-card'
 import Link from 'next/link'
 import { Loader2, UserCircle2, ChevronDown, CalendarX2, BookPlus } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
@@ -36,8 +37,10 @@ export default function PacingPage() {
   const [pacings, setPacings] = useState<Map<string, PacingLog>>(new Map())
   const [homeworkTasks, setHomeworkTasks] = useState<Map<string, HomeworkTask>>(new Map())
   const [exitByModule, setExitByModule] = useState<Map<string, { count: number; avg: number }>>(new Map())
+  const [exitByLessonPlan, setExitByLessonPlan] = useState<Map<string, { count: number; avg: number }>>(new Map())
   const [totalStudents, setTotalStudents] = useState(0)
   const [selectedWeek, setSelectedWeek] = useState(1)
+  const [lessonPlansByModule, setLessonPlansByModule] = useState<Map<string, Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number'>[]>>(new Map())
 
   useEffect(() => {
     async function load() {
@@ -71,6 +74,21 @@ export default function PacingPage() {
       })
       setExitByModule(exitMap)
 
+      // exit-ticket summary per lesson plan
+      const byLp = new Map<string, StudentAssessment[]>()
+      ;(assessments ?? []).forEach((a: StudentAssessment) => {
+        if (!a.lesson_plan_id) return
+        if (!byLp.has(a.lesson_plan_id)) byLp.set(a.lesson_plan_id, [])
+        byLp.get(a.lesson_plan_id)!.push(a)
+      })
+      const exitLpMap = new Map<string, { count: number; avg: number }>()
+      byLp.forEach((list, lpId) => {
+        const distinct = new Set(list.map(a => a.student_id)).size
+        const avg = list.reduce((sum, a) => sum + a.academic_score, 0) / list.length
+        exitLpMap.set(lpId, { count: distinct, avg })
+      })
+      setExitByLessonPlan(exitLpMap)
+
       const week = currentAcademicWeek(settingsRow.term_start_date)
       setSelectedWeek(Math.min(settingsRow.total_weeks, Math.max(1, week || 1)))
 
@@ -93,13 +111,28 @@ export default function PacingPage() {
     async function loadTeacherData() {
       let plQ = supabase.from('plan_submissions').select('*').eq('school_id', schoolId)
       let pcQ = supabase.from('pacing_logs').select('*').eq('school_id', schoolId)
+      let lpQ = supabase.from('lesson_plans')
+        .select('id, topic, status, plan_number, module_id')
+        .eq('school_id', schoolId)
+        .order('plan_number', { ascending: true })
       if (teacherId) {
         plQ = plQ.eq('teacher_id', teacherId)
         pcQ = pcQ.eq('teacher_id', teacherId)
+        lpQ = lpQ.eq('teacher_id', teacherId)
       }
-      const [{ data: pl }, { data: pc }] = await Promise.all([plQ, pcQ])
+      const [{ data: pl }, { data: pc }, { data: lps }] = await Promise.all([plQ, pcQ, lpQ])
       setPlans(new Map((pl ?? []).map((p: PlanSubmission) => [p.module_id, p])))
       setPacings(latestPacingByModule((pc ?? []) as PacingLog[]))
+
+      // group lesson plans by module_id
+      type LpSlim = Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number'> & { module_id: string | null }
+      const byMod = new Map<string, Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number'>[]>()
+      ;((lps ?? []) as LpSlim[]).forEach(lp => {
+        if (!lp.module_id) return
+        const existing = byMod.get(lp.module_id) ?? []
+        byMod.set(lp.module_id, [...existing, lp])
+      })
+      setLessonPlansByModule(byMod)
     }
     loadTeacherData()
   }, [teacherId])
@@ -226,9 +259,32 @@ export default function PacingPage() {
           </div>
         ) : (
           <div className="grid gap-3 lg:grid-cols-2">
-            {grouped.flatMap(g => g.mods).map(m => {
+            {grouped.flatMap(g => g.mods).flatMap(m => {
+              const lps = lessonPlansByModule.get(m.id) ?? []
               const exit = exitByModule.get(m.id)
-              return (
+              const exitSummary = { count: exit?.count ?? 0, total: totalStudents, avg: exit?.avg ?? 0 }
+
+              if (lps.length > 0) {
+                return lps.map(lp => {
+                  const lpExit = exitByLessonPlan.get(lp.id)
+                  const lpExitSummary = { count: lpExit?.count ?? 0, total: totalStudents, avg: lpExit?.avg ?? 0 }
+                  return (
+                    <LessonPlanPacingCard
+                      key={lp.id}
+                      module={m}
+                      lessonPlan={lp}
+                      pacing={pacings.get(m.id)}
+                      teacherId={teacherId}
+                      exitSummary={lpExitSummary}
+                      onOpenExitTicket={() => router.push(`/teacher/assessment?module=${m.id}&lesson_plan_id=${lp.id}`)}
+                      onPacingChange={log => setPacings(prev => new Map(prev).set(m.id, log))}
+                      isCurrent={selectedWeek === currentWeek}
+                    />
+                  )
+                })
+              }
+
+              return [(
                 <WeeklyPlanCard
                   key={m.id}
                   module={m}
@@ -238,10 +294,10 @@ export default function PacingPage() {
                   plan={plans.get(m.id)}
                   pacing={pacings.get(m.id)}
                   homeworkTask={homeworkTasks.get(m.id)}
-                  exitSummary={{ count: exit?.count ?? 0, total: totalStudents, avg: exit?.avg ?? 0 }}
+                  exitSummary={exitSummary}
                   onOpenExitTicket={id => router.push(`/teacher/assessment?module=${id}`)}
                 />
-              )
+              )]
             })}
           </div>
         )}

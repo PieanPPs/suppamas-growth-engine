@@ -97,6 +97,8 @@ export default function AssessmentPage() {
   const [boundRooms, setBoundRooms] = useState<string[]>([])
   const [settings, setSettings] = useState<AcademicSettings | null>(null)
   const [selectedModule, setSelectedModule] = useState<string>('')
+  const [lessonPlanId, setLessonPlanId] = useState<string | null>(null)
+  const [lessonPlanTopic, setLessonPlanTopic] = useState<string | null>(null)
   const [grades, setGrades] = useState<Record<string, StudentGrade>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
@@ -109,6 +111,11 @@ export default function AssessmentPage() {
 
   useEffect(() => {
     async function load() {
+      // read lesson_plan_id from URL before anything else
+      const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
+      const lpId = params?.get('lesson_plan_id') ?? null
+      if (lpId) setLessonPlanId(lpId)
+
       const [{ data: stds }, { data: mods }, { data: ts }, { data: st }] = await Promise.all([
         supabase.from('students').select('*').eq('school_id', schoolId).order('class_name').order('student_number'),
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
@@ -119,6 +126,12 @@ export default function AssessmentPage() {
       setModules(mods ?? [])
       setTeachers(ts ?? [])
       setSettings(st ?? null)
+
+      if (lpId) {
+        const { data: lp } = await supabase.from('lesson_plans').select('topic').eq('id', lpId).single()
+        if (lp?.topic) setLessonPlanTopic(lp.topic)
+      }
+
       const session = getSession()
       setIsTeacherRole(session?.role === 'teacher')
       const stored = typeof window !== 'undefined' ? localStorage.getItem(TEACHER_KEY) : null
@@ -185,12 +198,14 @@ export default function AssessmentPage() {
   useEffect(() => {
     if (!selectedModule || visibleStudents.length === 0) { setGrades({}); return }
     async function initGrades() {
-      const { data: existing } = await supabase
+      let q = supabase
         .from('student_assessments')
         .select('*')
         .eq('school_id', schoolId)
         .eq('module_id', selectedModule)
         .gte('created_at', startOfTodayISO())
+      if (lessonPlanId) q = q.eq('lesson_plan_id', lessonPlanId)
+      const { data: existing } = await q
       const byStudent = new Map<string, StudentAssessment>()
       ;(existing ?? []).forEach((a: StudentAssessment) => byStudent.set(a.student_id, a))
 
@@ -213,7 +228,7 @@ export default function AssessmentPage() {
       setAllSaved(visibleStudents.length > 0 && visibleStudents.every(s => initial[s.id]?.saved))
     }
     initGrades()
-  }, [visibleStudents.map(s => s.id).join(','), selectedModule])
+  }, [visibleStudents.map(s => s.id).join(','), selectedModule, lessonPlanId])
 
   function selectTeacher(id: string) {
     setTeacherId(id)
@@ -280,6 +295,7 @@ export default function AssessmentPage() {
       school_id: schoolId,
       student_id: studentId,
       module_id: selectedModule,
+      lesson_plan_id: lessonPlanId ?? null,
       academic_score: grade.academic_score,
       focus_color: grade.focus_color,
       soft_skill_score: grade.soft_skill_score,
@@ -411,21 +427,34 @@ export default function AssessmentPage() {
         )}
       </div>
 
-      {/* Module selector */}
-      <div className="relative">
-        <select
-          value={selectedModule}
-          onChange={e => setSelectedModule(e.target.value)}
-          className="w-full appearance-none bg-white border border-gray-200 rounded-xl px-4 py-3 pr-10 text-sm font-medium text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-        >
-          {visibleModules.map(m => (
-            <option key={m.id} value={m.id}>
-              {m.module_code} — {m.title}
-            </option>
-          ))}
-        </select>
-        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-      </div>
+      {/* Lesson-plan mode banner */}
+      {lessonPlanId && (
+        <div className="flex items-center gap-2 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2.5">
+          <div className="w-2 h-2 rounded-full bg-violet-500 flex-shrink-0" />
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold text-violet-500 uppercase tracking-wide">Exit Ticket รายชั่วโมง</p>
+            <p className="text-sm font-semibold text-violet-900 truncate">{lessonPlanTopic ?? '...'}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Module selector — hidden when locked to lesson plan */}
+      {!lessonPlanId && (
+        <div className="relative">
+          <select
+            value={selectedModule}
+            onChange={e => setSelectedModule(e.target.value)}
+            className="w-full appearance-none bg-white border border-gray-200 rounded-xl px-4 py-3 pr-10 text-sm font-medium text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          >
+            {visibleModules.map(m => (
+              <option key={m.id} value={m.id}>
+                {m.module_code} — {m.title}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        </div>
+      )}
 
       {/* Progress bar */}
       <div className="flex items-center justify-between text-xs text-gray-500">

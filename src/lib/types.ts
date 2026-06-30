@@ -251,6 +251,7 @@ export interface StudentAssessment {
   id: string
   student_id: string
   module_id: string
+  lesson_plan_id: string | null
   academic_score: 0 | 1 | 2
   focus_color: FocusColor
   soft_skill_score: 0 | 1 | 2
