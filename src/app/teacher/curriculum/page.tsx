@@ -43,6 +43,8 @@ export default function CurriculumPage() {
   const [addingCourse, setAddingCourse] = useState(false)
   const [newCourseName, setNewCourseName] = useState('')
   const [newCourseGrade, setNewCourseGrade] = useState('')
+  const [newCourseCode, setNewCourseCode] = useState('')
+  const [newCourseCodeError, setNewCourseCodeError] = useState('')
 
   const reloadCourseData = useCallback(async (subj: string) => {
     const [{ data: inds }, { data: mods }, { data: lk }] = await Promise.all([
@@ -92,13 +94,17 @@ export default function CurriculumPage() {
 
   async function addCourse() {
     if (!newCourseName.trim()) return
-    const key = `course_${Date.now()}`
+    const key = newCourseCode.trim().toUpperCase().replace(/\s+/g, '_')
+    if (!key) { setNewCourseCodeError('กรอกรหัสวิชา'); return }
+    const { data: existing } = await supabase.from('courses').select('id').eq('school_id', schoolId).eq('subject_key', key).maybeSingle()
+    if (existing) { setNewCourseCodeError('รหัสนี้ถูกใช้แล้ว'); return }
+    setNewCourseCodeError('')
     setSaving(true)
     const { data } = await supabase.from('courses')
       .insert({ school_id: schoolId, subject_key: key, name: newCourseName.trim(), grade: newCourseGrade.trim() || null })
       .select().single()
     setSaving(false)
-    setAddingCourse(false); setNewCourseName(''); setNewCourseGrade('')
+    setAddingCourse(false); setNewCourseName(''); setNewCourseGrade(''); setNewCourseCode('')
     if (data) {
       setCourses(prev => [...prev, data as Course])
       switchCourse((data as Course).subject_key)
@@ -246,10 +252,16 @@ export default function CurriculumPage() {
             className="bg-white border border-gray-200 rounded-2xl p-3 space-y-2 overflow-hidden">
             <input value={newCourseName} onChange={e => setNewCourseName(e.target.value)} placeholder="ชื่อรายวิชา (เช่น วิทยาการคำนวณ ป.5)"
               className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300" />
+            <div>
+              <input value={newCourseCode} onChange={e => { setNewCourseCode(e.target.value); setNewCourseCodeError('') }}
+                placeholder="รหัสวิชา เช่น COMPUTING_P5"
+                className={`w-full text-sm font-mono border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 ${newCourseCodeError ? 'border-red-300 focus:ring-red-300' : 'border-gray-200 focus:ring-blue-300'}`} />
+              {newCourseCodeError && <p className="text-xs text-red-500 mt-1">{newCourseCodeError}</p>}
+            </div>
             <div className="flex gap-2">
               <input value={newCourseGrade} onChange={e => setNewCourseGrade(e.target.value)} placeholder="ระดับชั้น (ป.5)"
                 className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300" />
-              <button onClick={addCourse} disabled={saving || !newCourseName.trim()}
+              <button onClick={addCourse} disabled={saving || !newCourseName.trim() || !newCourseCode.trim()}
                 className="px-4 bg-blue-600 text-white text-sm font-semibold rounded-lg disabled:opacity-50">เพิ่ม</button>
             </div>
           </motion.div>
