@@ -9,11 +9,11 @@ import { getSession, clearSession } from '@/lib/auth'
 import type { Session } from '@/lib/auth'
 
 const navItems = [
-  { href: '/teacher/pacing',     label: 'แผนสอน',  icon: BookOpen },
-  { href: '/teacher/assessment', label: 'คะแนน',   icon: ClipboardList },
-  { href: '/teacher/homework',   label: 'การบ้าน', icon: BookCheck },
-  { href: '/heroes',             label: 'ฮีโร่',   icon: Trophy },
-  { href: '/admin/dashboard',    label: 'ภาพรวม',  icon: BarChart3 },
+  { href: '/teacher/pacing',     label: 'แผนสอน',                              icon: BookOpen,      small: false },
+  { href: '/teacher/assessment', label: 'เช็คชื่อ/บันทึกพฤติกรรม/แบบทดสอบ', icon: ClipboardList, small: true  },
+  { href: '/teacher/homework',   label: 'การบ้าน',                             icon: BookCheck,     small: false },
+  { href: '/heroes',             label: 'ฮีโร่',                               icon: Trophy,        small: false },
+  { href: '/admin/dashboard',    label: 'ภาพรวม',                              icon: BarChart3,     small: false },
 ]
 
 const ROLE_LABEL: Record<string, { label: string; cls: string }> = {
@@ -86,7 +86,7 @@ export function Navigation() {
       {/* Bottom tab navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 print:hidden">
         <div className="max-w-2xl mx-auto flex">
-          {navItems.map(({ href, label, icon: Icon }) => {
+          {navItems.map(({ href, label, icon: Icon, small }) => {
             const active = pathname.startsWith(href) ||
               (href === '/teacher/assessment' &&
                 (pathname.startsWith('/teacher/tests') || pathname.startsWith('/teacher/pp5')))
@@ -96,7 +96,7 @@ export function Navigation() {
                   active ? 'text-blue-600 border-t-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'
                 }`}>
                 <Icon size={20} />
-                <span>{label}</span>
+                <span className={small ? 'text-[8px] leading-tight text-center' : ''}>{label}</span>
               </Link>
             )
           })}

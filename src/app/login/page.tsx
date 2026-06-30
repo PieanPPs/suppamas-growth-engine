@@ -44,12 +44,18 @@ export default function LoginPage() {
     if (!pin || loading) return
     setLoading(true)
     setError('')
-    const { data } = await supabase
+    const { data, error: dbErr } = await supabase
       .from('teachers')
       .select('id, name, role')
       .eq('school_id', schoolId)
       .eq('pin', pin)
       .maybeSingle()
+
+    if (dbErr) {
+      setError(`DB error: ${dbErr.message}`)
+      setLoading(false)
+      return
+    }
 
     if (!data) {
       setError('รหัสไม่ถูกต้อง กรุณาลองใหม่')
