@@ -1,0 +1,404 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { CurriculumModule, Course, Indicator, LessonPlan } from '@/lib/types'
+import { getSchoolId } from '@/lib/school'
+import { getSession } from '@/lib/auth'
+import {
+  Loader2, Copy, Check, ChevronLeft, Sparkles, ClipboardPaste, ArrowRight, BookPlus,
+} from 'lucide-react'
+import Link from 'next/link'
+
+// ======= Parser =======
+function parseAIOutput(text: string): Partial<LessonPlan> {
+  const extract = (key: string) => {
+    const re = new RegExp(`===\\s*${key}\\s*===([\\s\\S]*?)(?====|$)`)
+    return re.exec(text)?.[1]?.trim() ?? ''
+  }
+  return {
+    indicators_interim: extract('ตัวชี้วัดระหว่างทาง') || null,
+    indicators_final:   extract('ตัวชี้วัดปลายทาง')   || null,
+    objectives_k:       extract('จุดประสงค์-K')        || null,
+    objectives_p:       extract('จุดประสงค์-P')        || null,
+    objectives_a:       extract('จุดประสงค์-A')        || null,
+    key_content:        extract('สาระสำคัญ')            || null,
+    competencies:       extract('สมรรถนะสำคัญ')         || null,
+    desired_traits:     extract('คุณลักษณะอันพึงประสงค์') || null,
+    activities:         extract('กิจกรรมการเรียนรู้')    || null,
+    assessment:         extract('การวัดและประเมินผล')   || null,
+    materials:          extract('สื่อและแหล่งการเรียนรู้') || null,
+  }
+}
+
+// ======= Prompt builder =======
+function buildPrompt(opts: {
+  subjectName: string
+  grade: string
+  moduleName: string
+  topic: string
+  indicators: Indicator[]
+  duration: string
+}) {
+  const indList = opts.indicators.length
+    ? opts.indicators.map(i => `  - ${i.code}: ${i.description}`).join('\n')
+    : '  - (ครูระบุตัวชี้วัดเอง)'
+
+  return `คุณคือผู้เชี่ยวชาญด้านการออกแบบการเรียนรู้เชิงรุก (Active Learning) สำหรับโรงเรียนในประเทศไทย
+
+จงเขียนแผนการจัดการเรียนรู้ 1 คาบ โดยใช้หลักการ Active Learning ที่มีขั้นตอนชัดเจน
+
+ข้อมูลบทเรียน:
+- รายวิชา: ${opts.subjectName} ชั้น ${opts.grade}
+- หน่วยการเรียนรู้: ${opts.moduleName}
+- เรื่อง: ${opts.topic}
+- เวลาเรียน: ${opts.duration}
+- ตัวชี้วัดที่เกี่ยวข้อง:
+${indList}
+
+**กฎสำคัญ: ตอบเฉพาะรูปแบบที่กำหนดด้านล่าง ห้ามเพิ่มคำอธิบายนอกรูปแบบ**
+
+ตอบตามรูปแบบนี้ทุกหัวข้อ โดยใช้ ===หัวข้อ=== เป็นตัวแบ่งเท่านั้น:
+
+===ตัวชี้วัดระหว่างทาง===
+[รหัสและคำอธิบายตัวชี้วัดระหว่างทาง]
+===ตัวชี้วัดปลายทาง===
+[รหัสและคำอธิบายตัวชี้วัดปลายทาง]
+===จุดประสงค์-K===
+นักเรียน[ระบุสิ่งที่นักเรียนจะรู้/เข้าใจ] (K)
+===จุดประสงค์-P===
+นักเรียน[ระบุทักษะที่นักเรียนจะทำได้] (P)
+===จุดประสงค์-A===
+นักเรียน[ระบุเจตคติ/คุณลักษณะที่พึงประสงค์] (A)
+===สาระสำคัญ===
+[สรุปแก่นความรู้ของบทเรียนนี้ 2–4 ประโยค]
+===สมรรถนะสำคัญ===
+1. ความสามารถในการสื่อสาร
+2. ความสามารถในการคิด
+3. [เพิ่มตามความเหมาะสม]
+===คุณลักษณะอันพึงประสงค์===
+1. ใฝ่เรียนรู้
+2. มุ่งมั่นในการทำงาน
+===กิจกรรมการเรียนรู้===
+[เขียนเป็นข้อ 1. 2. 3. ... ครอบคลุม 4 ช่วง: ①นำเข้าสู่บทเรียน (Hook) ②สอนเนื้อหา/สาธิต ③กิจกรรมเชิงรุก (Active Practice เช่น Think-Pair-Share, เกม, ใบงาน) ④สรุปบทเรียนและ Exit Ticket]
+===การวัดและประเมินผล===
+วิธีการ: [ระบุ] | เครื่องมือ: [ระบุ] | เกณฑ์: ร้อยละ 50 ขึ้นไปผ่านเกณฑ์
+===สื่อและแหล่งการเรียนรู้===
+1. [ระบุสื่อ/อุปกรณ์]
+2. [เพิ่มเติม]
+3. หนังสือเรียนรายวิชา${opts.subjectName} ชั้น ${opts.grade}`
+}
+
+export default function GenerateLessonPlanPage() {
+  const supabase = createClient()
+  const schoolId = getSchoolId()
+  const router = useRouter()
+  const session = getSession()
+
+  const [step, setStep] = useState<1 | 2>(1)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  // data
+  const [modules, setModules] = useState<CurriculumModule[]>([])
+  const [courses, setCourses] = useState<Course[]>([])
+  const [indicators, setIndicators] = useState<Indicator[]>([])
+
+  // step 1 inputs
+  const [moduleId, setModuleId] = useState('')
+  const [topic, setTopic] = useState('')
+  const [duration, setDuration] = useState('1 ชั่วโมง')
+  const [selectedInds, setSelectedInds] = useState<Set<string>>(new Set())
+  const [generatedPrompt, setGeneratedPrompt] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  // step 2
+  const [aiOutput, setAiOutput] = useState('')
+  const [parsed, setParsed] = useState<Partial<LessonPlan> | null>(null)
+
+  useEffect(() => {
+    async function load() {
+      const teacherId = session?.role === 'teacher' && session.userId ? session.userId : null
+      const [{ data: mods }, { data: crs }] = await Promise.all([
+        supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
+        supabase.from('courses').select('*').eq('school_id', schoolId).order('name'),
+      ])
+      let visibleMods = (mods ?? []) as CurriculumModule[]
+      if (teacherId) {
+        const { data: t } = await supabase.from('teachers').select('subjects').eq('id', teacherId).maybeSingle()
+        const assigned = new Set<string>(t?.subjects ?? [])
+        if (assigned.size > 0) visibleMods = visibleMods.filter(m => assigned.has(m.subject))
+      }
+      setModules(visibleMods)
+      setCourses((crs ?? []) as Course[])
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  // Load indicators when module changes
+  useEffect(() => {
+    if (!moduleId) { setIndicators([]); return }
+    const mod = modules.find(m => m.id === moduleId)
+    if (!mod) return
+    supabase.from('indicators').select('*').eq('subject', mod.subject).order('sequence_order')
+      .then(({ data }) => setIndicators((data ?? []) as Indicator[]))
+  }, [moduleId, modules])
+
+  function toggleInd(id: string) {
+    setSelectedInds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function getCourseFor(mod: CurriculumModule) {
+    return courses.find(c => c.subject_key === mod.subject)
+  }
+
+  function handleGenerate() {
+    const mod = modules.find(m => m.id === moduleId)
+    if (!mod || !topic.trim()) return
+    const course = getCourseFor(mod)
+    const chosenInds = indicators.filter(i => selectedInds.has(i.id))
+    const prompt = buildPrompt({
+      subjectName: course?.name ?? mod.subject,
+      grade: course?.grade ?? '',
+      moduleName: mod.title,
+      topic: topic.trim(),
+      indicators: chosenInds,
+      duration,
+    })
+    setGeneratedPrompt(prompt)
+  }
+
+  async function copyPrompt() {
+    await navigator.clipboard.writeText(generatedPrompt)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  function handleParse() {
+    if (!aiOutput.trim()) return
+    setParsed(parseAIOutput(aiOutput))
+  }
+
+  async function handleSave() {
+    if (!parsed || !moduleId || !topic.trim()) return
+    setSaving(true)
+    const mod = modules.find(m => m.id === moduleId)
+    const course = getCourseFor(mod!)
+    const teacherId = session?.role === 'teacher' && session.userId ? session.userId : null
+
+    // count existing plans for this teacher+module
+    const { count } = await supabase.from('lesson_plans')
+      .select('*', { count: 'exact', head: true })
+      .eq('school_id', schoolId)
+      .eq('module_id', moduleId)
+    const planNumber = (count ?? 0) + 1
+
+    const { data, error } = await supabase.from('lesson_plans').insert({
+      school_id: schoolId,
+      teacher_id: teacherId,
+      module_id: moduleId,
+      plan_number: planNumber,
+      topic: topic.trim(),
+      subject: course?.name ?? mod?.subject ?? null,
+      grade: course?.grade ?? null,
+      teach_date: null,
+      ...parsed,
+    }).select().single()
+
+    setSaving(false)
+    if (!error && data) router.push(`/teacher/lesson-plans/${data.id}`)
+  }
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-24">
+      <Loader2 className="animate-spin text-violet-500" size={32} />
+    </div>
+  )
+
+  return (
+    <div className="space-y-5 pb-16">
+      <div className="flex items-center gap-2">
+        <Link href="/teacher/lesson-plans" className="text-gray-400 hover:text-gray-600">
+          <ChevronLeft size={20} />
+        </Link>
+        <div>
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <Sparkles size={18} className="text-violet-600" /> สร้างแผนการสอนด้วย AI
+          </h2>
+          <p className="text-xs text-gray-500">เลือกเรื่อง → copy prompt → วาง AI → บันทึก</p>
+        </div>
+      </div>
+
+      {/* Step indicator */}
+      <div className="flex gap-2">
+        {[1, 2].map(s => (
+          <div key={s} className={`flex-1 h-1 rounded-full transition-colors ${step >= s ? 'bg-violet-500' : 'bg-gray-200'}`} />
+        ))}
+      </div>
+
+      {/* ===== STEP 1 ===== */}
+      {step === 1 && (
+        <div className="space-y-4">
+          <p className="text-sm font-semibold text-gray-700">ขั้นที่ 1 — กำหนดบทเรียนและสร้าง Prompt</p>
+
+          {/* Module */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-gray-600">หน่วยการเรียนรู้</label>
+            <select value={moduleId} onChange={e => { setModuleId(e.target.value); setSelectedInds(new Set()); setGeneratedPrompt('') }}
+              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-violet-300">
+              <option value="">เลือกหน่วยการเรียนรู้...</option>
+              {modules.map(m => (
+                <option key={m.id} value={m.id}>{m.module_code} — {m.title}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Topic */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-gray-600">เรื่องที่สอน (รายชั่วโมง)</label>
+            <input value={topic} onChange={e => { setTopic(e.target.value); setGeneratedPrompt('') }}
+              placeholder="เช่น การบวกจำนวนนับที่มีผลบวกไม่เกิน 100,000 ไม่มีการทด"
+              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+          </div>
+
+          {/* Duration */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-gray-600">เวลาเรียน</label>
+            <select value={duration} onChange={e => { setDuration(e.target.value); setGeneratedPrompt('') }}
+              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-violet-300">
+              {['1 ชั่วโมง', '2 ชั่วโมง', '50 นาที', '60 นาที', '90 นาที'].map(d => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Indicators */}
+          {indicators.length > 0 && (
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-600">
+                ตัวชี้วัด <span className="text-gray-400">(เลือกที่เกี่ยวข้อง)</span>
+              </label>
+              <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 max-h-52 overflow-y-auto">
+                {indicators.map(ind => (
+                  <label key={ind.id} className="flex items-start gap-2.5 px-3 py-2 cursor-pointer hover:bg-gray-50">
+                    <input type="checkbox" checked={selectedInds.has(ind.id)} onChange={() => { toggleInd(ind.id); setGeneratedPrompt('') }}
+                      className="mt-0.5 accent-violet-600 flex-shrink-0" />
+                    <div>
+                      <span className="text-[10px] font-semibold text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded">{ind.code}</span>
+                      <p className="text-xs text-gray-700 mt-0.5">{ind.description}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Generate prompt */}
+          <button onClick={handleGenerate} disabled={!moduleId || !topic.trim()}
+            className="w-full bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold py-3 rounded-xl disabled:opacity-40 flex items-center justify-center gap-2">
+            <Sparkles size={15} /> สร้าง Prompt
+          </button>
+
+          {/* Prompt output */}
+          {generatedPrompt && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-700">Prompt พร้อมใช้ — Copy แล้วไปวางใน AI</p>
+                <button onClick={copyPrompt}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors ${copied ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                  {copied ? <><Check size={12} /> Copied!</> : <><Copy size={12} /> Copy</>}
+                </button>
+              </div>
+              <textarea readOnly value={generatedPrompt} rows={10}
+                className="w-full text-xs font-mono bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none resize-none text-gray-700" />
+              <button onClick={() => setStep(2)}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold py-3 rounded-xl flex items-center justify-center gap-2">
+                ไปขั้นต่อไป <ArrowRight size={15} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===== STEP 2 ===== */}
+      {step === 2 && (
+        <div className="space-y-4">
+          <p className="text-sm font-semibold text-gray-700">ขั้นที่ 2 — วางผลลัพธ์จาก AI แล้วบันทึก</p>
+
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 text-xs text-blue-700 space-y-1">
+            <p><strong>วิธีใช้:</strong></p>
+            <p>1. Copy prompt จากขั้นที่ 1 → วางใน ChatGPT / Gemini / Claude</p>
+            <p>2. AI ตอบกลับมา → Copy คำตอบทั้งหมด</p>
+            <p>3. วางลงในช่องด้านล่าง → กดวิเคราะห์ → บันทึก</p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-gray-600">
+              วางผลลัพธ์จาก AI ที่นี่
+            </label>
+            <textarea value={aiOutput} onChange={e => { setAiOutput(e.target.value); setParsed(null) }}
+              placeholder="วางข้อความที่ได้จาก AI ทั้งหมดลงที่นี่..."
+              rows={12}
+              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-violet-300 font-mono resize-none" />
+          </div>
+
+          {!parsed ? (
+            <button onClick={handleParse} disabled={!aiOutput.trim()}
+              className="w-full bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold py-3 rounded-xl disabled:opacity-40 flex items-center justify-center gap-2">
+              <ClipboardPaste size={15} /> วิเคราะห์และแสดงตัวอย่าง
+            </button>
+          ) : (
+            <div className="space-y-3">
+              {/* Preview */}
+              <div className="bg-white border border-emerald-200 rounded-2xl p-4 space-y-3">
+                <p className="text-xs font-bold text-emerald-700">ตัวอย่างแผนที่จะบันทึก</p>
+                {[
+                  ['จุดประสงค์ K', parsed.objectives_k],
+                  ['จุดประสงค์ P', parsed.objectives_p],
+                  ['จุดประสงค์ A', parsed.objectives_a],
+                  ['สาระสำคัญ', parsed.key_content],
+                  ['กิจกรรม', parsed.activities],
+                  ['การวัดประเมิน', parsed.assessment],
+                  ['สื่อ', parsed.materials],
+                ].map(([label, val]) => val ? (
+                  <div key={label as string}>
+                    <p className="text-[10px] font-bold text-gray-500 uppercase mb-0.5">{label}</p>
+                    <p className="text-xs text-gray-700 whitespace-pre-line line-clamp-3">{val}</p>
+                  </div>
+                ) : null)}
+              </div>
+
+              {Object.values(parsed).filter(Boolean).length === 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs text-amber-700">
+                  ไม่พบข้อมูล — ตรวจสอบว่า AI ตอบตามรูปแบบ ===หัวข้อ=== หรือไม่
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button onClick={() => setParsed(null)}
+                  className="flex-1 border border-gray-200 text-gray-600 text-sm font-semibold py-2.5 rounded-xl hover:bg-gray-50">
+                  แก้ไขใหม่
+                </button>
+                <button onClick={handleSave} disabled={saving}
+                  className="flex-1 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold py-2.5 rounded-xl disabled:opacity-50 flex items-center justify-center gap-1.5">
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <BookPlus size={14} />}
+                  บันทึกแผน
+                </button>
+              </div>
+            </div>
+          )}
+
+          <button onClick={() => setStep(1)} className="text-sm text-gray-400 hover:text-gray-600 w-full text-center">
+            ← กลับขั้นที่ 1
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}

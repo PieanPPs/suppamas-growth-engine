@@ -163,6 +163,19 @@ export default function PacingPage() {
         </div>
       )}
 
+      {/* AI lesson plan shortcut */}
+      <Link href="/teacher/lesson-plans"
+        className="flex items-center gap-3 bg-violet-50 border border-violet-200 rounded-2xl px-4 py-3 hover:bg-violet-100 transition-colors">
+        <div className="w-9 h-9 rounded-xl bg-violet-600 flex items-center justify-center flex-shrink-0">
+          <BookPlus size={16} className="text-white" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-violet-900">สร้างแผนการสอนด้วย AI</p>
+          <p className="text-xs text-violet-600">เลือกเรื่อง → copy prompt → วาง AI → บันทึกแผน</p>
+        </div>
+        <ChevronDown size={16} className="text-violet-400 -rotate-90 flex-shrink-0" />
+      </Link>
+
       {/* Overall pacing traffic lights */}
       <AnimatePresence>
         {teacherId && currentWeek > 0 && (

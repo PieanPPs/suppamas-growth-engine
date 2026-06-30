@@ -214,6 +214,32 @@ export interface Teacher {
   pin?: string | null
 }
 
+export interface LessonPlan {
+  id: string
+  school_id: string
+  teacher_id: string | null
+  module_id: string | null
+  plan_number: number
+  topic: string
+  subject: string | null
+  grade: string | null
+  teach_date: string | null  // YYYY-MM-DD
+  indicators_interim: string | null
+  indicators_final: string | null
+  objectives_k: string | null
+  objectives_p: string | null
+  objectives_a: string | null
+  key_content: string | null
+  competencies: string | null
+  desired_traits: string | null
+  activities: string | null
+  assessment: string | null
+  materials: string | null
+  post_lesson_note: string | null
+  suggestion: string | null
+  created_at: string
+}
+
 export interface StudentAssessment {
   id: string
   student_id: string
