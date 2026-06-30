@@ -6,7 +6,7 @@ import { LessonPlan, LessonPlanStatus, Teacher, CurriculumModule } from '@/lib/t
 import { getSchoolId } from '@/lib/school'
 import {
   Loader2, CheckCircle2, AlertCircle, Clock, Pencil, BookOpen,
-  Check, X, ChevronRight, User,
+  Check, X, ChevronRight, User, MessageSquare,
 } from 'lucide-react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -73,6 +73,18 @@ export default function AdminLessonPlansPage() {
       .update({ status: 'revision', reviewed_at: now, reviewer_note: note.trim() })
       .eq('id', plan.id)
     setPlans(ps => ps.map(p => p.id === plan.id ? { ...p, status: 'revision', reviewed_at: now, reviewer_note: note.trim() } : p))
+    setSaving(false)
+    setReviewing(null)
+    setNote('')
+  }
+
+  async function saveNote(plan: PlanWithMeta) {
+    if (!note.trim()) return
+    setSaving(true)
+    await supabase.from('lesson_plans')
+      .update({ reviewer_note: note.trim() })
+      .eq('id', plan.id)
+    setPlans(ps => ps.map(p => p.id === plan.id ? { ...p, reviewer_note: note.trim() } : p))
     setSaving(false)
     setReviewing(null)
     setNote('')
@@ -253,15 +265,22 @@ export default function AdminLessonPlansPage() {
 
               <div className="space-y-2">
                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">
-                  ข้อเสนอแนะ (กรณีขอแก้ไข)
+                  หมายเหตุ / ข้อเสนอแนะ
                 </label>
                 <textarea
                   value={note}
                   onChange={e => setNote(e.target.value)}
                   rows={3}
-                  placeholder="ระบุรายละเอียดที่ต้องการให้แก้ไข..."
+                  placeholder="พิมพ์หมายเหตุถึงครู ครูจะเห็นทันที..."
                   className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-300 resize-none"
                 />
+                {note.trim() && (
+                  <button onClick={() => saveNote(reviewing)} disabled={saving}
+                    className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold text-blue-600 border border-blue-200 rounded-xl py-2 hover:bg-blue-50 disabled:opacity-50">
+                    {saving ? <Loader2 size={13} className="animate-spin" /> : <MessageSquare size={13} />}
+                    บันทึกหมายเหตุ (ไม่เปลี่ยนสถานะ)
+                  </button>
+                )}
               </div>
 
               <div className="flex gap-2">

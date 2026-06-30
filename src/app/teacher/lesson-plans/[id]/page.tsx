@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { LessonPlan, LessonPlanStatus, CurriculumModule } from '@/lib/types'
 import { getSchoolId } from '@/lib/school'
+import { getSession } from '@/lib/auth'
 import {
   Loader2, ChevronLeft, Printer, CalendarDays, Check, Pencil, X,
   NotebookPen, Save, Send, RotateCcw, CheckCircle2, AlertCircle, Clock,
@@ -194,10 +195,12 @@ export default function LessonPlanDetailPage() {
     <div className="text-center py-16 text-gray-400">ไม่พบแผนการสอน</div>
   )
 
+  const session = getSession()
+  const isTeacher = session?.role === 'teacher'
   const status = plan.status ?? 'draft'
   const statusCfg = STATUS_CONFIG[status]
-  const canEdit = status === 'draft' || status === 'revision'
-  const canSubmit = status === 'draft' || status === 'revision'
+  const canEdit = isTeacher && (status === 'draft' || status === 'revision')
+  const canSubmit = isTeacher && (status === 'draft' || status === 'revision')
 
   return (
     <div className="space-y-5 pb-16">
@@ -255,11 +258,15 @@ export default function LessonPlanDetailPage() {
         )}
       </div>
 
-      {/* Reviewer note (revision) */}
-      {status === 'revision' && plan.reviewer_note && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3">
-          <p className="text-xs font-bold text-red-600 mb-1">ข้อเสนอแนะจาก ผอ.</p>
-          <p className="text-sm text-red-800 whitespace-pre-line">{plan.reviewer_note}</p>
+      {/* Reviewer note — แสดงทุกสถานะเมื่อมี note */}
+      {plan.reviewer_note && (
+        <div className={`rounded-2xl px-4 py-3 ${status === 'revision' ? 'bg-red-50 border border-red-200' : 'bg-blue-50 border border-blue-200'}`}>
+          <p className={`text-xs font-bold mb-1 ${status === 'revision' ? 'text-red-600' : 'text-blue-600'}`}>
+            หมายเหตุจาก ผอ.
+          </p>
+          <p className={`text-sm whitespace-pre-line ${status === 'revision' ? 'text-red-800' : 'text-blue-800'}`}>
+            {plan.reviewer_note}
+          </p>
         </div>
       )}
 
