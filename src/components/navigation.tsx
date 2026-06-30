@@ -4,7 +4,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { BookOpen, ClipboardList, BarChart3, BookCheck, Trophy, LogOut } from 'lucide-react'
+import { BookOpen, ClipboardList, BarChart3, BookCheck, LogOut } from 'lucide-react'
 import { getSession, clearSession } from '@/lib/auth'
 import type { Session } from '@/lib/auth'
 
@@ -12,8 +12,7 @@ const NAV_ITEMS = [
   { href: '/teacher/pacing',     label: 'แผนสอน',                              icon: BookOpen,      small: false, roles: null },
   { href: '/teacher/assessment', label: 'เช็คชื่อ/บันทึกพฤติกรรม/แบบทดสอบ', icon: ClipboardList, small: true,  roles: null },
   { href: '/teacher/homework',   label: 'การบ้าน',                             icon: BookCheck,     small: false, roles: null },
-  { href: '/heroes',             label: 'ฮีโร่',                               icon: Trophy,        small: false, roles: null },
-  { href: '/admin/dashboard',    label: 'ภาพรวม',                              icon: BarChart3,     small: false, roles: ['admin', 'principal'] as string[] },
+  { href: '/overview',           label: 'ภาพรวม',                              icon: BarChart3,     small: false, roles: null },
 ]
 
 const ROLE_LABEL: Record<string, { label: string; cls: string }> = {
@@ -91,7 +90,9 @@ export function Navigation() {
             .map(({ href, label, icon: Icon, small }) => {
             const active = pathname.startsWith(href) ||
               (href === '/teacher/assessment' &&
-                (pathname.startsWith('/teacher/tests') || pathname.startsWith('/teacher/pp5')))
+                (pathname.startsWith('/teacher/tests') || pathname.startsWith('/teacher/pp5'))) ||
+              (href === '/overview' &&
+                (pathname.startsWith('/admin/dashboard') || pathname.startsWith('/teacher/overview')))
             return (
               <Link key={href} href={href}
                 className={`flex-1 flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors ${

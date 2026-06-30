@@ -42,7 +42,6 @@ export default function DashboardPage() {
   const [completedModules, setCompletedModules] = useState(0)
   const [hazardCount, setHazardCount] = useState(0)
   const [warnings, setWarnings] = useState<RiskWarning[]>([])
-
   useEffect(() => {
     async function load() {
       const [
@@ -59,12 +58,15 @@ export default function DashboardPage() {
 
       if (!modules) { setLoading(false); return }
 
-      setTotalStudents(students?.length ?? 0)
+      const visibleModules = modules
+      const visibleStudents = students ?? []
+
+      setTotalStudents(visibleStudents.length)
       setWarnings(
         computeAtRiskStudents(
-          (students ?? []) as Student[],
+          visibleStudents as Student[],
           (assessments ?? []) as StudentAssessment[],
-          modules as CurriculumModule[]
+          visibleModules as CurriculumModule[]
         )
       )
 
@@ -86,8 +88,8 @@ export default function DashboardPage() {
         assessmentsByModule.get(a.module_id)!.push(a)
       })
 
-      // Build per-module summaries
-      const built: ModuleSummary[] = modules.map(module => {
+      // Build per-module summaries (using filtered modules)
+      const built: ModuleSummary[] = visibleModules.map(module => {
         const pacing = pacingMap.get(module.id)
         const modAssessments = assessmentsByModule.get(module.id) ?? []
         const avgScore = modAssessments.length
