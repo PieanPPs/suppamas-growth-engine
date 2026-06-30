@@ -199,10 +199,10 @@ export default function LessonPlanDetailPage() {
               placeholder="ชื่อเรื่อง"
               className="w-full text-sm font-bold border border-violet-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-300 bg-white" />
             <div className="flex gap-2">
-              <input value={draft.subject} onChange={e => set('subject')(e.target.value)}
+              <input value={draft.subject ?? ''} onChange={e => set('subject')(e.target.value)}
                 placeholder="รายวิชา"
                 className="flex-1 text-xs border border-violet-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-300 bg-white" />
-              <input value={draft.grade} onChange={e => set('grade')(e.target.value)}
+              <input value={draft.grade ?? ''} onChange={e => set('grade')(e.target.value)}
                 placeholder="ชั้น"
                 className="w-24 text-xs border border-violet-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-300 bg-white" />
             </div>
