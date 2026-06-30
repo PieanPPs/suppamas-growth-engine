@@ -117,7 +117,7 @@ export default function LessonPlanPrintPage() {
             <tr>
               <td className="border border-gray-400 px-2 py-1 font-semibold bg-gray-50">หน่วยการเรียนรู้</td>
               <td className="border border-gray-400 px-2 py-1" colSpan={3}>
-                {mod ? `${mod.module_code} — ${mod.title}` : '..............................'}
+                {mod ? mod.title : '..............................'}
               </td>
             </tr>
           </tbody>
