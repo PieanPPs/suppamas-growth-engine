@@ -8,7 +8,9 @@ import { BookOpen, ClipboardList, BarChart3, BookCheck, LogOut } from 'lucide-re
 import { getSession, clearSession } from '@/lib/auth'
 import type { Session } from '@/lib/auth'
 
-const NAV_ITEMS = [
+type NavItem = { href: string; label: string; icon: React.ComponentType<{size?:number;className?:string}>; small: boolean; roles: string[] | null }
+
+const NAV_ITEMS: NavItem[] = [
   { href: '/teacher/pacing',     label: 'แผนสอน',                              icon: BookOpen,      small: false, roles: null },
   { href: '/teacher/assessment', label: 'เช็คชื่อ/บันทึกพฤติกรรม/แบบทดสอบ', icon: ClipboardList, small: true,  roles: null },
   { href: '/teacher/homework',   label: 'การบ้าน',                             icon: BookCheck,     small: false, roles: null },
