@@ -21,16 +21,26 @@ ${indicatorLines}
 ข้อกำหนดสำคัญ:
 - ภาษาเหมาะกับวัยผู้เรียน โจทย์ชัดเจน ตัวลวงสมเหตุสมผล
 - ตอบกลับในรูปแบบด้านล่างนี้เท่านั้น ห้ามมีข้อความอื่นนำหน้าหรือต่อท้าย
-- คั่นแต่ละข้อด้วยบรรทัด --- เสมอ
+- **บังคับ**: หลังเฉลยของทุกข้อ ต้องมีบรรทัด --- คั่นเสมอ ไม่มีข้อยกเว้น
 
+ตัวอย่างรูปแบบ (ทำ ${opts.count} ข้อ ต่อกันแบบนี้):
 ข้อ: 1
 ตัวชี้วัด: ${opts.indicators[0]?.code ?? 'ป.5/1'}
-คำถาม: (โจทย์)
+คำถาม: (โจทย์ข้อที่ 1)
 ก: (ตัวเลือก)
 ข: (ตัวเลือก)
 ค: (ตัวเลือก)
 ง: (ตัวเลือก)
 เฉลย: ก
+---
+ข้อ: 2
+ตัวชี้วัด: ${opts.indicators[1]?.code ?? opts.indicators[0]?.code ?? 'ป.5/1'}
+คำถาม: (โจทย์ข้อที่ 2)
+ก: (ตัวเลือก)
+ข: (ตัวเลือก)
+ค: (ตัวเลือก)
+ง: (ตัวเลือก)
+เฉลย: ข
 ---`
 }
 
@@ -59,7 +69,12 @@ const LABELS: { key: keyof ParsedExamItem | 'no'; re: RegExp }[] = [
 /** แตกข้อความที่วางกลับจากเว็บ AI (หรือข้อสอบเก่าที่จัดรูปแบบเดียวกัน) เป็นรายข้อ */
 export function parseExamText(text: string): { items: ParsedExamItem[]; warnings: string[] } {
   const warnings: string[] = []
-  const blocks = text.replace(/\r/g, '').split(/^\s*-{3,}\s*$/m).map(b => b.trim()).filter(Boolean)
+  const cleaned = text.replace(/\r/g, '')
+  let blocks = cleaned.split(/^\s*-{3,}\s*$/m).map(b => b.trim()).filter(Boolean)
+  // Fallback: no --- found → split by "ข้อ: N" line starts so AI output without separators still parses
+  if (blocks.length <= 1) {
+    blocks = cleaned.split(/(?=^ข้อ(?:ที่)?\s*[:：.]?\s*\d+)/m).map(b => b.trim()).filter(Boolean)
+  }
   const items: ParsedExamItem[] = []
 
   for (const block of blocks) {
