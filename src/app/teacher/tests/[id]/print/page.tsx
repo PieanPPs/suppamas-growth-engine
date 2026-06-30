@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Test, TestItem, Course } from '@/lib/types'
-import { Loader2, Printer, ArrowLeft } from 'lucide-react'
+import { Loader2, Printer, ArrowLeft, FileText } from 'lucide-react'
 import Link from 'next/link'
+import type { Paragraph, Table as DocxTable } from 'docx'
 
 const TYPE_LABEL: Record<string, string> = {
   quiz: 'สอบเก็บคะแนน', midterm: 'สอบกลางภาค', final: 'สอบปลายภาค', mock_nt: 'ข้อสอบ Pre-NT',
@@ -19,6 +20,7 @@ export default function PrintExamPage() {
   const [items, setItems] = useState<TestItem[]>([])
   const [course, setCourse] = useState<Course | null>(null)
   const [loading, setLoading] = useState(true)
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -37,13 +39,6 @@ export default function PrintExamPage() {
     load()
   }, [testId])
 
-  if (loading) {
-    return <div className="flex items-center justify-center py-24"><Loader2 className="animate-spin text-gray-500" size={32} /></div>
-  }
-  if (!test) {
-    return <p className="text-center py-24 text-gray-400">ไม่พบแบบทดสอบ</p>
-  }
-
   // answer key grouped by indicator
   const byIndicator = new Map<string, TestItem[]>()
   items.forEach(it => {
@@ -52,16 +47,199 @@ export default function PrintExamPage() {
     byIndicator.get(key)!.push(it)
   })
 
+  async function exportWord() {
+    if (!test || exporting) return
+    setExporting(true)
+    try {
+      const {
+        AlignmentType, BorderStyle, Document,
+        PageBreak, Packer, Paragraph, Table,
+        TableCell, TableRow, TextRun, WidthType,
+        convertInchesToTwip,
+      } = await import('docx')
+
+      const FONT = 'TH Sarabun New'
+      const sz = (pt: number) => pt * 2 // docx uses half-points
+
+      const NIL = { style: BorderStyle.NIL } as const
+      const THIN = { style: BorderStyle.SINGLE, size: 4, color: '000000' } as const
+      // table-level borders control the outer frame; cell-level borders produce inner grid lines
+      const NO_BORDERS = { top: NIL, bottom: NIL, left: NIL, right: NIL }
+      const TABLE_FRAME = { top: THIN, bottom: THIN, left: THIN, right: THIN }
+      const CELL_THIN = { top: THIN, bottom: THIN, left: THIN, right: THIN }
+
+      const run = (text: string, opts: { size?: number; bold?: boolean } = {}) =>
+        new TextRun({ text, font: FONT, size: sz(opts.size ?? 14), bold: opts.bold })
+
+      const line = (text: string, opts: { size?: number; bold?: boolean; center?: boolean; indent?: number } = {}) =>
+        new Paragraph({
+          alignment: opts.center ? AlignmentType.CENTER : AlignmentType.LEFT,
+          indent: opts.indent ? { left: opts.indent } : undefined,
+          children: [run(text, opts)],
+        })
+
+      const blank = () => new Paragraph({ children: [] })
+
+      // --- questions ---
+      const questionNodes = items.flatMap(it => {
+        const hasChoices = it.choice_a || it.choice_b || it.choice_c || it.choice_d
+        const nodes: (Paragraph | DocxTable)[] = [line(`${it.item_no}. ${it.question}`)]
+        if (hasChoices) {
+          const choiceRows = []
+          if (it.choice_a || it.choice_b) {
+            choiceRows.push(new TableRow({
+              children: [
+                new TableCell({ borders: NO_BORDERS, width: { size: 50, type: WidthType.PERCENTAGE }, children: [line(`ก. ${it.choice_a ?? ''}`, { indent: 360 })] }),
+                new TableCell({ borders: NO_BORDERS, width: { size: 50, type: WidthType.PERCENTAGE }, children: [line(`ข. ${it.choice_b ?? ''}`)] }),
+              ]
+            }))
+          }
+          if (it.choice_c || it.choice_d) {
+            choiceRows.push(new TableRow({
+              children: [
+                new TableCell({ borders: NO_BORDERS, width: { size: 50, type: WidthType.PERCENTAGE }, children: [line(`ค. ${it.choice_c ?? ''}`, { indent: 360 })] }),
+                new TableCell({ borders: NO_BORDERS, width: { size: 50, type: WidthType.PERCENTAGE }, children: [line(`ง. ${it.choice_d ?? ''}`)] }),
+              ]
+            }))
+          }
+          nodes.push(new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            borders: NO_BORDERS,
+            rows: choiceRows,
+          }))
+        }
+        nodes.push(blank())
+        return nodes
+      })
+
+      // --- answer key grid (10 per row) ---
+      const chunks: TestItem[][] = []
+      for (let i = 0; i < items.length; i += 10) chunks.push(items.slice(i, i + 10))
+      const answerRows = chunks.flatMap(chunk => [
+        new TableRow({
+          children: chunk.map(it => new TableCell({
+            borders: CELL_THIN,
+            children: [line(String(it.item_no), { center: true, size: 11 })],
+          }))
+        }),
+        new TableRow({
+          children: chunk.map(it => new TableCell({
+            borders: CELL_THIN,
+            children: [line(it.answer ?? '—', { center: true, bold: true })],
+          }))
+        }),
+      ])
+
+      // --- indicator table ---
+      const indicatorRows = [
+        new TableRow({
+          children: [
+            new TableCell({ borders: CELL_THIN, width: { size: 35, type: WidthType.PERCENTAGE }, children: [line('ตัวชี้วัด', { bold: true })] }),
+            new TableCell({ borders: CELL_THIN, width: { size: 50, type: WidthType.PERCENTAGE }, children: [line('ข้อที่', { bold: true })] }),
+            new TableCell({ borders: CELL_THIN, width: { size: 15, type: WidthType.PERCENTAGE }, children: [line('จำนวน', { bold: true, center: true })] }),
+          ]
+        }),
+        ...Array.from(byIndicator.entries()).map(([code, list]) =>
+          new TableRow({
+            children: [
+              new TableCell({ borders: CELL_THIN, width: { size: 35, type: WidthType.PERCENTAGE }, children: [line(code)] }),
+              new TableCell({ borders: CELL_THIN, width: { size: 50, type: WidthType.PERCENTAGE }, children: [line(list.map(i => i.item_no).join(', '))] }),
+              new TableCell({ borders: CELL_THIN, width: { size: 15, type: WidthType.PERCENTAGE }, children: [line(String(list.length), { center: true })] }),
+            ]
+          })
+        )
+      ]
+
+      const doc = new Document({
+        sections: [{
+          properties: {
+            page: {
+              size: { width: 11906, height: 16838 }, // A4
+              margin: {
+                top: convertInchesToTwip(1),
+                right: convertInchesToTwip(1),
+                bottom: convertInchesToTwip(1),
+                left: convertInchesToTwip(1.18), // ~3cm left margin
+              }
+            }
+          },
+          children: ([
+            line('โรงเรียนอนุสรณ์ศุภมาศ', { size: 16, bold: true, center: true }),
+            line(`${TYPE_LABEL[test.type] ?? 'แบบทดสอบ'} · ${course?.name ?? test.subject}`, { center: true }),
+            line(test.title, { bold: true, center: true }),
+            line(`จำนวน ${items.length} ข้อ · คะแนนเต็ม ${test.max_score} คะแนน${test.test_date ? ` · วันที่สอบ ${test.test_date}` : ''}`, { size: 12, center: true }),
+            blank(),
+            new Paragraph({
+              border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: '000000' } },
+              children: [],
+            }),
+            blank(),
+            new Paragraph({
+              children: [
+                run('ชื่อ-สกุล ........................................................'),
+                run('     ชั้น ..............'),
+                run('     เลขที่ ..............'),
+              ]
+            }),
+            blank(),
+            line('คำชี้แจง: ให้นักเรียนเลือกคำตอบที่ถูกต้องที่สุดเพียงข้อเดียว แล้วกากบาท (✗) ลงในกระดาษคำตอบ', { size: 13 }),
+            blank(),
+            ...questionNodes,
+            // --- Answer key (new page) ---
+            new Paragraph({ children: [new PageBreak()] }),
+            line(`เฉลย — ${test.title} (สำหรับครู)`, { bold: true, center: true }),
+            blank(),
+            new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders: CELL_THIN, rows: answerRows }),
+            blank(),
+            line('แยกตามตัวชี้วัด (ใช้วิเคราะห์จุดอ่อนหลังตรวจ)', { bold: true }),
+            blank(),
+            new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders: CELL_THIN, rows: indicatorRows }),
+            blank(),
+            line('สร้างโดย Suppamas Growth Engine · ไฟจราจรแห่งการเรียนรู้', { size: 10, center: true }),
+          ] as (Paragraph | DocxTable)[]),
+        }]
+      })
+
+      const blob = await Packer.toBlob(doc)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${test.title}.docx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  if (loading) {
+    return <div className="flex items-center justify-center py-24"><Loader2 className="animate-spin text-gray-500" size={32} /></div>
+  }
+  if (!test) {
+    return <p className="text-center py-24 text-gray-400">ไม่พบแบบทดสอบ</p>
+  }
+
   return (
     <div className="max-w-[210mm] mx-auto font-sarabun">
       <div className="print:hidden flex items-center justify-between mb-4">
         <Link href="/teacher/tests" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
           <ArrowLeft size={16} /> แบบทดสอบ
         </Link>
-        <button onClick={() => window.print()}
-          className="inline-flex items-center gap-1.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold px-4 py-2.5 rounded-xl">
-          <Printer size={14} /> พิมพ์ / บันทึก PDF
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={exportWord}
+            disabled={exporting}
+            className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold px-4 py-2.5 rounded-xl"
+          >
+            <FileText size={14} /> {exporting ? 'กำลังสร้าง...' : 'Export Word'}
+          </button>
+          <button onClick={() => window.print()}
+            className="inline-flex items-center gap-1.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold px-4 py-2.5 rounded-xl">
+            <Printer size={14} /> พิมพ์ / บันทึก PDF
+          </button>
+        </div>
       </div>
 
       <div className="bg-white border border-gray-200 print:border-0 rounded-2xl print:rounded-none px-8 py-8 print:px-0 print:py-0">
