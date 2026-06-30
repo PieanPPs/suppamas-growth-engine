@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { ScoreModeSwitch } from '@/components/score-mode-switch'
 import { RoomFilter, readStoredRoom, storeRoom } from '@/components/room-filter'
 import { getSchoolId } from '@/lib/school'
+import { getSession } from '@/lib/auth'
 import { Loader2, Star, CheckCircle2, ChevronDown, UserCircle2, Info, Zap, CalendarCheck } from 'lucide-react'
 
 const TEACHER_KEY = 'sge_teacher_id'
@@ -90,6 +91,7 @@ export default function AssessmentPage() {
   const [modules, setModules] = useState<CurriculumModule[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [teacherId, setTeacherId] = useState<string | null>(null)
+  const [isTeacherRole, setIsTeacherRole] = useState(false)
   const [boundRooms, setBoundRooms] = useState<string[]>([])
   const [settings, setSettings] = useState<AcademicSettings | null>(null)
   const [selectedModule, setSelectedModule] = useState<string>('')
@@ -115,6 +117,8 @@ export default function AssessmentPage() {
       setModules(mods ?? [])
       setTeachers(ts ?? [])
       setSettings(st ?? null)
+      const session = getSession()
+      setIsTeacherRole(session?.role === 'teacher')
       const stored = typeof window !== 'undefined' ? localStorage.getItem(TEACHER_KEY) : null
       if (stored) setTeacherId(stored)
       setLoading(false)
@@ -333,19 +337,21 @@ export default function AssessmentPage() {
 
       <ScoreModeSwitch />
 
-      {/* Teacher picker (filters rooms + subjects) */}
-      <div className="relative">
-        <UserCircle2 size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
-        <select
-          value={teacherId ?? ''}
-          onChange={e => selectTeacher(e.target.value)}
-          className="w-full appearance-none bg-white border border-gray-200 rounded-xl pl-10 pr-10 py-3 text-sm font-medium text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-        >
-          <option value="" disabled>เลือกชื่อครูผู้สอน...</option>
-          {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
-        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-      </div>
+      {/* Teacher picker (filters rooms + subjects) — hidden for teacher role */}
+      {!isTeacherRole && (
+        <div className="relative">
+          <UserCircle2 size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
+          <select
+            value={teacherId ?? ''}
+            onChange={e => selectTeacher(e.target.value)}
+            className="w-full appearance-none bg-white border border-gray-200 rounded-xl pl-10 pr-10 py-3 text-sm font-medium text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          >
+            <option value="" disabled>เลือกชื่อครูผู้สอน...</option>
+            {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        </div>
+      )}
 
       {/* room-binding status */}
       {teacherId && !roomFiltered && (
