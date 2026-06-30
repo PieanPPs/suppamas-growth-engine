@@ -13,7 +13,7 @@ import { ScoreModeSwitch } from '@/components/score-mode-switch'
 import { RoomFilter, readStoredRoom, storeRoom } from '@/components/room-filter'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
-import { Loader2, Star, CheckCircle2, ChevronDown, UserCircle2, Info, Zap, CalendarCheck } from 'lucide-react'
+import { Loader2, CheckCircle2, ChevronDown, UserCircle2, Info, Zap, CalendarCheck } from 'lucide-react'
 
 const TEACHER_KEY = 'sge_teacher_id'
 
@@ -46,20 +46,22 @@ const SOFT_CONFIG: Record<0 | 1 | 2, { label: string; active: string }> = {
   2: { label: 'ร่วม+ช่วยเพื่อน', active: 'bg-indigo-600 text-white' },
 }
 
-/** 0-2 คะแนน = ดาว 2 ดวง · แตะดวงที่ติดอยู่ซ้ำเพื่อล้างเป็น 0 */
-function StarRating({ value, onChange }: { value: 0 | 1 | 2; onChange: (v: 0 | 1 | 2) => void }) {
+/** ผ่าน / ไม่ผ่าน Exit Ticket: 0=ยังไม่บันทึก, 1=ไม่ผ่าน, 2=ผ่าน */
+function PassFail({ value, onChange }: { value: 0 | 1 | 2; onChange: (v: 0 | 1 | 2) => void }) {
   return (
-    <div className="flex gap-1">
-      {([1, 2] as const).map(n => (
-        <button
-          key={n}
-          onClick={() => onChange(value === n ? 0 : n)}
-          className="p-1 transition-transform active:scale-110"
-          aria-label={`${n} ดาว`}
-        >
-          <Star size={26} className={n <= value ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'} />
-        </button>
-      ))}
+    <div className="flex gap-2">
+      <button
+        onClick={() => onChange(value === 1 ? 0 : 1)}
+        className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${value === 1 ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-500'}`}
+      >
+        ไม่ผ่าน
+      </button>
+      <button
+        onClick={() => onChange(value === 2 ? 0 : 2)}
+        className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${value === 2 ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-500'}`}
+      >
+        ผ่าน
+      </button>
     </div>
   )
 }
@@ -100,7 +102,7 @@ export default function AssessmentPage() {
   const [saving, setSaving] = useState<string | null>(null)
   const [allSaved, setAllSaved] = useState(false)
   const [classDefault, setClassDefault] = useState<ClassDefault>({
-    academic_score: 1, focus_color: 'Green', soft_skill_score: 1,
+    academic_score: 2, focus_color: 'Green', soft_skill_score: 1,
   })
   const [attendance, setAttendance] = useState<Record<string, AttendanceRecord>>({})
   const [attendOpen, setAttendOpen] = useState(false)
@@ -473,7 +475,7 @@ export default function AssessmentPage() {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-[11px] text-gray-500 w-20 flex-shrink-0">ผลการเรียน</span>
-              <StarRating
+              <PassFail
                 value={classDefault.academic_score}
                 onChange={v => setClassDefault(d => ({ ...d, academic_score: v }))}
               />
@@ -571,13 +573,13 @@ export default function AssessmentPage() {
                   </div>
                 </div>
 
-                {/* ③ ผลการเรียน — จากสมุด Exit Ticket ท้ายคาบ */}
+                {/* ③ ผลการเรียน — Exit Ticket ท้ายคาบ */}
                 <div className="flex items-center justify-between">
                   <div className="w-24 flex-shrink-0">
                     <span className="text-xs font-medium text-gray-600 block">ผลการเรียน</span>
-                    <span className="text-[10px] text-gray-400 leading-tight block">Exit Ticket ท้ายคาบ (เต็ม 2)</span>
+                    <span className="text-[10px] text-gray-400 leading-tight block">ตามจุดประสงค์การเรียนรู้</span>
                   </div>
-                  <StarRating
+                  <PassFail
                     value={grade.academic_score}
                     onChange={v => updateGrade(student.id, 'academic_score', v)}
                   />
