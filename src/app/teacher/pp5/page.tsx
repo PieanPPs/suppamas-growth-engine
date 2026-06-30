@@ -21,6 +21,7 @@ import {
   Printer, Save, Sparkles, BookCheck, Info,
 } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
+import { getSession } from '@/lib/auth'
 
 const TEACHER_KEY = 'sge_teacher_id'
 
@@ -36,6 +37,7 @@ export default function Pp5Page() {
   const [loading, setLoading] = useState(true)
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [teacherId, setTeacherId] = useState<string | null>(null)
+  const [isTeacherRole, setIsTeacherRole] = useState(false)
   const [boundRooms, setBoundRooms] = useState<string[]>([])
   const [courses, setCourses] = useState<Course[]>([])
   const [students, setStudents] = useState<Student[]>([])
@@ -87,8 +89,13 @@ export default function Pp5Page() {
     setAssessments(asm ?? []); setTests(tst ?? []); setTestScores(tsc ?? [])
     setComponents(comps ?? []); setSavedScores(cs ?? [])
     setHomework(hw ?? []); setTraitRatings(tr ?? []); setAttendanceRows(att ?? [])
-    const stored = typeof window !== 'undefined' ? localStorage.getItem(TEACHER_KEY) : null
-    if (stored) setTeacherId(stored)
+    const session = getSession()
+    const isTeacher = session?.role === 'teacher'
+    setIsTeacherRole(isTeacher)
+    const effectiveId = isTeacher && session?.userId
+      ? session.userId
+      : (typeof window !== 'undefined' ? localStorage.getItem(TEACHER_KEY) : null)
+    if (effectiveId) setTeacherId(effectiveId)
     setLoading(false)
   }
   useEffect(() => { loadAll() }, [])
@@ -297,16 +304,18 @@ export default function Pp5Page() {
 
       <ScoreModeSwitch />
 
-      {/* Teacher picker */}
-      <div className="relative">
-        <UserCircle2 size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
-        <select value={teacherId ?? ''} onChange={e => selectTeacher(e.target.value)}
-          className="w-full appearance-none bg-white border border-gray-200 rounded-xl pl-10 pr-10 py-3 text-sm font-medium text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-          <option value="" disabled>เลือกชื่อครูผู้สอน...</option>
-          {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
-        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-      </div>
+      {/* Teacher picker — hidden for teacher role */}
+      {!isTeacherRole && (
+        <div className="relative">
+          <UserCircle2 size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
+          <select value={teacherId ?? ''} onChange={e => selectTeacher(e.target.value)}
+            className="w-full appearance-none bg-white border border-gray-200 rounded-xl pl-10 pr-10 py-3 text-sm font-medium text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <option value="" disabled>เลือกชื่อครูผู้สอน...</option>
+            {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        </div>
+      )}
 
       {/* Subject picker */}
       <div className="relative">
