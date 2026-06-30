@@ -204,10 +204,14 @@ export interface Classroom {
   homeroom_teacher: string | null
 }
 
+export type UserRole = 'admin' | 'principal' | 'teacher'
+
 export interface Teacher {
   id: string
   name: string
   subjects: string[]
+  role?: UserRole | null
+  pin?: string | null
 }
 
 export interface StudentAssessment {

@@ -6,8 +6,16 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { Teacher, Classroom, Course } from '@/lib/types'
 import {
-  ArrowLeft, Loader2, Plus, Pencil, Trash2, X, Check, UserCog, GraduationCap, BookOpen, AlertTriangle, ChevronDown, ChevronUp,
+  ArrowLeft, Loader2, Plus, Pencil, Trash2, X, Check, UserCog, GraduationCap,
+  BookOpen, AlertTriangle, ChevronDown, ChevronUp, KeyRound, Eye, EyeOff, ShieldCheck,
 } from 'lucide-react'
+import type { UserRole } from '@/lib/types'
+
+const ROLE_OPTIONS: { value: UserRole; label: string; cls: string }[] = [
+  { value: 'teacher',   label: 'ครูสอน',          cls: 'bg-teal-100 text-teal-700' },
+  { value: 'principal', label: 'ผู้อำนวยการ (ผอ.)', cls: 'bg-blue-100 text-blue-700' },
+  { value: 'admin',     label: 'ผู้ดูแลระบบ',      cls: 'bg-purple-100 text-purple-700' },
+]
 import { getSchoolId } from '@/lib/school'
 
 type TeacherRow = Teacher & { roomIds: string[] }
@@ -26,6 +34,10 @@ export default function TeachersPage() {
   const [draftName, setDraftName] = useState('')
   const [draftSubjects, setDraftSubjects] = useState<Set<string>>(new Set())
   const [draftRooms, setDraftRooms] = useState<Set<string>>(new Set())
+  const [draftRole, setDraftRole] = useState<UserRole>('teacher')
+  const [editingPin, setEditingPin] = useState<string | null>(null)
+  const [draftPin, setDraftPin] = useState('')
+  const [revealPin, setRevealPin] = useState<string | null>(null)
   const [showSubjectMgmt, setShowSubjectMgmt] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -79,6 +91,15 @@ export default function TeachersPage() {
     setDraftName(t?.name ?? '')
     setDraftSubjects(new Set(t?.subjects ?? []))
     setDraftRooms(new Set(t?.roomIds ?? []))
+    setDraftRole((t?.role ?? 'teacher') as UserRole)
+  }
+
+  async function savePin(teacherId: string) {
+    if (!draftPin.trim()) return
+    await supabase.from('teachers').update({ pin: draftPin.trim() }).eq('id', teacherId)
+    setEditingPin(null)
+    setDraftPin('')
+    load()
   }
 
   function toggle(set: Set<string>, value: string, apply: (s: Set<string>) => void) {
@@ -93,12 +114,12 @@ export default function TeachersPage() {
     let teacherId = editing
     if (editing === 'new') {
       const { data } = await supabase.from('teachers')
-        .insert({ school_id: schoolId, name: draftName.trim(), subjects: Array.from(draftSubjects) })
+        .insert({ school_id: schoolId, name: draftName.trim(), subjects: Array.from(draftSubjects), role: draftRole })
         .select('id').single()
       teacherId = data?.id
     } else {
       await supabase.from('teachers')
-        .update({ name: draftName.trim(), subjects: Array.from(draftSubjects) })
+        .update({ name: draftName.trim(), subjects: Array.from(draftSubjects), role: draftRole })
         .eq('id', editing)
       await supabase.from('teacher_classrooms').delete().eq('teacher_id', editing)
     }
@@ -192,6 +213,21 @@ export default function TeachersPage() {
               </div>
             </div>
 
+            {/* Role selector */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 mb-1.5 flex items-center gap-1"><ShieldCheck size={13} /> บทบาท</p>
+              <div className="flex gap-2">
+                {ROLE_OPTIONS.map(opt => (
+                  <button key={opt.value} onClick={() => setDraftRole(opt.value)}
+                    className={`flex-1 text-xs font-semibold py-2 px-2 rounded-lg border transition-colors ${
+                      draftRole === opt.value ? `${opt.cls} border-transparent` : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                    }`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <button onClick={save} disabled={!draftName.trim() || saving}
               className="w-full bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold py-2.5 rounded-xl disabled:opacity-50 flex items-center justify-center gap-1.5">
               {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} บันทึก
@@ -202,30 +238,82 @@ export default function TeachersPage() {
 
       {/* Teacher list */}
       <div className="space-y-2">
-        {teachers.map(t => (
-          <div key={t.id} className="bg-white border border-gray-200 rounded-2xl px-4 py-3">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-800">{t.name}</p>
-                <div className="flex flex-wrap gap-1 mt-1.5">
-                  {t.roomIds.map(id => (
-                    <span key={id} className="text-[10px] bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded-full font-medium">{roomName(id)}</span>
-                  ))}
-                  {(t.subjects ?? []).map(s => (
-                    <span key={s} className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full font-medium">{courseName(s)}</span>
-                  ))}
-                  {t.roomIds.length === 0 && (
-                    <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-full font-medium">⚠ ยังไม่ผูกห้อง</span>
-                  )}
+        {teachers.map(t => {
+          const roleInfo = ROLE_OPTIONS.find(r => r.value === (t.role ?? 'teacher')) ?? ROLE_OPTIONS[0]
+          const hasPin = !!t.pin
+          const isPinEditing = editingPin === t.id
+          return (
+            <div key={t.id} className="bg-white border border-gray-200 rounded-2xl px-4 py-3 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="text-sm font-semibold text-gray-800">{t.name}</p>
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${roleInfo.cls}`}>{roleInfo.label}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {t.roomIds.map(id => (
+                      <span key={id} className="text-[10px] bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded-full font-medium">{roomName(id)}</span>
+                    ))}
+                    {(t.subjects ?? []).map(s => (
+                      <span key={s} className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full font-medium">{courseName(s)}</span>
+                    ))}
+                    {t.roomIds.length === 0 && t.role === 'teacher' && (
+                      <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-full font-medium">⚠ ยังไม่ผูกห้อง</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  <button onClick={() => openEdit(t)} className="text-gray-400 hover:text-teal-600 p-1"><Pencil size={14} /></button>
+                  <button onClick={() => remove(t.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>
                 </div>
               </div>
-              <div className="flex gap-1 flex-shrink-0">
-                <button onClick={() => openEdit(t)} className="text-gray-400 hover:text-teal-600 p-1"><Pencil size={14} /></button>
-                <button onClick={() => remove(t.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>
+
+              {/* PIN row */}
+              <div className="flex items-center gap-2 border-t border-gray-100 pt-2">
+                <KeyRound size={13} className="text-gray-400 flex-shrink-0" />
+                {hasPin ? (
+                  <span className="text-xs text-gray-500 font-mono flex-1">
+                    {revealPin === t.id ? t.pin : '●'.repeat(t.pin!.length)}
+                  </span>
+                ) : (
+                  <span className="text-xs text-amber-600 flex-1">ยังไม่มี PIN</span>
+                )}
+                {hasPin && (
+                  <button onClick={() => setRevealPin(revealPin === t.id ? null : t.id)}
+                    className="text-gray-400 hover:text-gray-600 p-0.5">
+                    {revealPin === t.id ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                )}
+                <button onClick={() => { setEditingPin(isPinEditing ? null : t.id); setDraftPin('') }}
+                  className="text-xs text-teal-600 hover:text-teal-700 font-semibold flex items-center gap-0.5 flex-shrink-0">
+                  {isPinEditing ? <X size={12} /> : <KeyRound size={12} />}
+                  {isPinEditing ? 'ยกเลิก' : hasPin ? 'รีเซต' : 'ตั้ง PIN'}
+                </button>
               </div>
+
+              {/* Inline PIN editor */}
+              {isPinEditing && (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={8}
+                    value={draftPin}
+                    onChange={e => setDraftPin(e.target.value.replace(/\D/g, ''))}
+                    placeholder="PIN ตัวเลข 4–8 หลัก"
+                    className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300 font-mono"
+                    autoFocus
+                  />
+                  <button onClick={() => savePin(t.id)} disabled={draftPin.length < 4}
+                    className="bg-teal-600 hover:bg-teal-700 disabled:opacity-40 text-white text-xs font-semibold px-4 rounded-xl flex items-center gap-1">
+                    <Check size={13} /> บันทึก
+                  </button>
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          )
+        })}
         {teachers.length === 0 && (
           <p className="text-center text-sm text-gray-400 py-10">ยังไม่มีครูในระบบ — กดเพิ่มครูได้เลย</p>
         )}
