@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { CurriculumModule, Course, Indicator, LessonPlan } from '@/lib/types'
 import { getSchoolId } from '@/lib/school'
@@ -94,6 +94,7 @@ export default function GenerateLessonPlanPage() {
   const supabase = createClient()
   const schoolId = getSchoolId()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const session = getSession()
 
   const [step, setStep] = useState<1 | 2>(1)
@@ -104,6 +105,7 @@ export default function GenerateLessonPlanPage() {
   const [modules, setModules] = useState<CurriculumModule[]>([])
   const [courses, setCourses] = useState<Course[]>([])
   const [indicators, setIndicators] = useState<Indicator[]>([])
+  const [existingPlans, setExistingPlans] = useState<Pick<LessonPlan, 'id' | 'topic' | 'plan_number'>[]>([])
 
   // step 1 inputs
   const [moduleId, setModuleId] = useState('')
@@ -132,18 +134,30 @@ export default function GenerateLessonPlanPage() {
       }
       setModules(visibleMods)
       setCourses((crs ?? []) as Course[])
+      // pre-select from ?module= URL param
+      const paramModule = searchParams.get('module')
+      if (paramModule) setModuleId(paramModule)
       setLoading(false)
     }
     load()
   }, [])
 
-  // Load indicators when module changes
+  // Load indicators + existing plans when module changes
   useEffect(() => {
-    if (!moduleId) { setIndicators([]); return }
+    if (!moduleId) { setIndicators([]); setExistingPlans([]); return }
     const mod = modules.find(m => m.id === moduleId)
     if (!mod) return
-    supabase.from('indicators').select('*').eq('subject', mod.subject).order('sequence_order')
-      .then(({ data }) => setIndicators((data ?? []) as Indicator[]))
+    const teacherId = session?.role === 'teacher' && session.userId ? session.userId : null
+    Promise.all([
+      supabase.from('indicators').select('*').eq('subject', mod.subject).order('sequence_order'),
+      teacherId
+        ? supabase.from('lesson_plans').select('id, topic, plan_number')
+            .eq('module_id', moduleId).eq('teacher_id', teacherId).order('plan_number')
+        : Promise.resolve({ data: [] }),
+    ]).then(([{ data: inds }, { data: plans }]) => {
+      setIndicators((inds ?? []) as Indicator[])
+      setExistingPlans((plans ?? []) as Pick<LessonPlan, 'id' | 'topic' | 'plan_number'>[])
+    })
   }, [moduleId, modules])
 
   function toggleInd(id: string) {
@@ -258,6 +272,26 @@ export default function GenerateLessonPlanPage() {
               ))}
             </select>
           </div>
+
+          {/* Existing plans for this module */}
+          {moduleId && (
+            <div className={`rounded-xl px-3 py-2.5 text-xs space-y-1.5 ${existingPlans.length > 0 ? 'bg-violet-50 border border-violet-100' : 'bg-gray-50 border border-gray-100'}`}>
+              {existingPlans.length > 0 ? (
+                <>
+                  <p className="font-semibold text-violet-700">
+                    มีแผนอยู่แล้ว {existingPlans.length} ชั่วโมง — กำลังสร้างแผนชั่วโมงที่ {existingPlans.length + 1}
+                  </p>
+                  <div className="space-y-0.5">
+                    {existingPlans.map(p => (
+                      <p key={p.id} className="text-violet-600">#{p.plan_number} {p.topic}</p>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="text-gray-500">กำลังสร้างแผนชั่วโมงที่ 1 สำหรับ module นี้</p>
+              )}
+            </div>
+          )}
 
           {/* Topic */}
           <div className="space-y-1">

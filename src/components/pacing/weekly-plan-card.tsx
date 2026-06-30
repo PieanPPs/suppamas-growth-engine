@@ -68,8 +68,7 @@ export function WeeklyPlanCard({
     routine_exit: plan?.routine_exit ?? '',
   })
   const [file, setFile] = useState<File | null>(null)
-  const [aiPlans, setAiPlans] = useState<Pick<LessonPlan, 'id' | 'topic' | 'status'>[]>([])
-  const [linkedPlanId, setLinkedPlanId] = useState<string | null>(initialPlan?.lesson_plan_id ?? null)
+  const [aiPlans, setAiPlans] = useState<Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number'>[]>([])
   const [showRoutine, setShowRoutine] = useState(
     !!(plan?.routine_hook || plan?.routine_core || plan?.routine_active || plan?.routine_exit)
   )
@@ -82,7 +81,6 @@ export function WeeklyPlanCard({
       setPlanName(initialPlan.plan_name ?? '')
       setSummary(initialPlan.summary_note ?? '')
       setLink(initialPlan.material_link ?? '')
-      setLinkedPlanId(initialPlan.lesson_plan_id ?? null)
       setRoutine({
         routine_hook: initialPlan.routine_hook ?? '',
         routine_core: initialPlan.routine_core ?? '',
@@ -92,16 +90,16 @@ export function WeeklyPlanCard({
     }
   }, [initialPlan])
 
-  // load AI lesson plans for this module
+  // load lesson plans for this module
   useEffect(() => {
     if (!teacherId) return
     supabase
       .from('lesson_plans')
-      .select('id, topic, status')
+      .select('id, topic, status, plan_number')
       .eq('module_id', module.id)
       .eq('teacher_id', teacherId)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => setAiPlans((data ?? []) as Pick<LessonPlan, 'id' | 'topic' | 'status'>[]))
+      .order('plan_number', { ascending: true })
+      .then(({ data }) => setAiPlans((data ?? []) as Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number'>[]))
   }, [teacherId, module.id])
 
   const [saving, setSaving] = useState(false)
@@ -132,7 +130,6 @@ export function WeeklyPlanCard({
           summary_note: summary || null,
           material_link: link || null,
           file_path: filePath,
-          lesson_plan_id: linkedPlanId || null,
           ...routine,
         },
         { onConflict: 'teacher_id,module_id' }
@@ -276,43 +273,50 @@ export function WeeklyPlanCard({
           />
         </div>
 
-        {/* lesson plan picker */}
-        {aiPlans.length > 0 ? (
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-violet-600 flex items-center gap-1">
-              <BookPlus size={12} /> เชื่อมแผน
-            </label>
-            <select
-              value={linkedPlanId ?? ''}
-              onChange={e => {
-                const val = e.target.value || null
-                setLinkedPlanId(val)
-                if (val) {
-                  const found = aiPlans.find(p => p.id === val)
-                  if (found) setPlanName(found.topic)
-                }
-              }}
-              className="w-full text-sm border border-violet-200 bg-violet-50 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-300"
+        {/* แผนรายชั่วโมง */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-violet-600 flex items-center gap-1">
+              <BookPlus size={12} />
+              แผนรายชั่วโมง
+              {aiPlans.length > 0 && (
+                <span className="text-gray-400 font-normal ml-0.5">({aiPlans.length} แผน)</span>
+              )}
+            </span>
+            <Link
+              href={`/teacher/lesson-plans/generate?module=${module.id}`}
+              className="text-[11px] font-semibold text-violet-600 hover:text-violet-800 flex items-center gap-0.5"
             >
-              <option value="">— ยังไม่ได้เชื่อมแผน —</option>
-              {aiPlans.map(p => (
-                <option key={p.id} value={p.id}>{p.topic}</option>
-              ))}
-            </select>
-            {linkedPlanId && (
-              <Link href={`/teacher/lesson-plans/${linkedPlanId}`}
-                className="text-xs text-violet-600 hover:underline flex items-center gap-0.5">
-                <ExternalLink size={11} /> เปิดแผน
-              </Link>
-            )}
+              + เพิ่มแผนชั่วโมงใหม่
+            </Link>
           </div>
-        ) : (
-          <Link href="/teacher/lesson-plans/generate"
-            className="flex items-center gap-2 text-xs text-violet-600 border border-dashed border-violet-200 rounded-xl px-3 py-2 hover:bg-violet-50 transition-colors">
-            <BookPlus size={13} className="flex-shrink-0" />
-            สร้างแผนสำหรับ module นี้
-          </Link>
-        )}
+
+          {aiPlans.length > 0 ? (
+            <div className="space-y-1">
+              {aiPlans.map(p => {
+                const dot =
+                  p.status === 'approved'  ? 'bg-green-500' :
+                  p.status === 'submitted' ? 'bg-blue-500'  :
+                  p.status === 'revision'  ? 'bg-red-500'   : 'bg-gray-300'
+                return (
+                  <Link key={p.id} href={`/teacher/lesson-plans/${p.id}`}
+                    className="flex items-center gap-2 text-xs text-gray-700 bg-violet-50 rounded-lg px-2.5 py-1.5 hover:bg-violet-100 transition-colors group">
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                    <span className="text-[10px] text-violet-500 font-semibold flex-shrink-0">#{p.plan_number}</span>
+                    <span className="truncate flex-1">{p.topic}</span>
+                    <ExternalLink size={10} className="flex-shrink-0 text-gray-300 group-hover:text-violet-500" />
+                  </Link>
+                )
+              })}
+            </div>
+          ) : (
+            <Link href={`/teacher/lesson-plans/generate?module=${module.id}`}
+              className="flex items-center gap-2 text-xs text-violet-500 border border-dashed border-violet-200 rounded-xl px-3 py-2 hover:bg-violet-50 transition-colors">
+              <BookPlus size={13} className="flex-shrink-0" />
+              ยังไม่มีแผนรายชั่วโมง — กดสร้างแผนแรก
+            </Link>
+          )}
+        </div>
 
         {/* file */}
         <label className="flex items-center gap-2 text-sm text-gray-500 border border-dashed border-gray-300 rounded-xl px-3 py-2 cursor-pointer hover:border-blue-300 transition-colors">
