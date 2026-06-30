@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import {
-  Student, CurriculumModule, HomeworkStatus, HomeworkSubmission, HomeworkTask,
+  Student, CurriculumModule, HomeworkStatus, HomeworkSubmission, HomeworkTask, LessonPlan,
 } from '@/lib/types'
 import {
   Loader2, ChevronDown, QrCode, CheckCircle2, Clock, XCircle,
@@ -23,6 +23,10 @@ const STATUS: Record<HomeworkStatus, { label: string; on: string; icon: React.Re
 
 const TEACHER_KEY = 'sge_teacher_id'
 
+function taskKey(moduleId: string, lessonPlanId: string | null): string {
+  return `${moduleId}::${lessonPlanId ?? ''}`
+}
+
 export default function HomeworkPage() {
   const supabase = createClient()
   const schoolId = getSchoolId()
@@ -32,6 +36,8 @@ export default function HomeworkPage() {
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null)
   const [modules, setModules] = useState<CurriculumModule[]>([])
   const [selectedModule, setSelectedModule] = useState('')
+  const [selectedLessonPlanId, setSelectedLessonPlanId] = useState<string | null>(null)
+  const [lessonPlans, setLessonPlans] = useState<Pick<LessonPlan, 'id' | 'module_id' | 'topic' | 'plan_number'>[]>([])
   const [tasks, setTasks] = useState<Map<string, HomeworkTask>>(new Map())
   const [allSubs, setAllSubs] = useState<HomeworkSubmission[]>([])
   const [loading, setLoading] = useState(true)
@@ -46,11 +52,12 @@ export default function HomeworkPage() {
 
   useEffect(() => {
     async function load() {
-      const [{ data: st }, { data: mods }, { data: tk }, { data: subsData }] = await Promise.all([
+      const [{ data: st }, { data: mods }, { data: tk }, { data: subsData }, { data: lps }] = await Promise.all([
         supabase.from('students').select('*').eq('school_id', schoolId).order('name'),
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
         supabase.from('homework_tasks').select('*').eq('school_id', schoolId),
         supabase.from('homework_submissions').select('*').eq('school_id', schoolId),
+        supabase.from('lesson_plans').select('id, module_id, topic, plan_number').eq('school_id', schoolId).order('plan_number'),
       ])
 
       // For teacher role use session.userId (set on login) — not TEACHER_KEY which can hold
@@ -70,11 +77,20 @@ export default function HomeworkPage() {
         }
       }
 
+      const lessonPlanList = (lps ?? []) as Pick<LessonPlan, 'id' | 'module_id' | 'topic' | 'plan_number'>[]
+
       setStudents(st ?? [])
       setModules(visibleMods)
-      setTasks(new Map((tk ?? []).map((t: HomeworkTask) => [t.module_id, t])))
+      setLessonPlans(lessonPlanList)
+      setTasks(new Map((tk ?? []).map((t: HomeworkTask) => [taskKey(t.module_id, t.lesson_plan_id), t])))
       setAllSubs(subsData ?? [])
-      if (visibleMods[0]) setSelectedModule(visibleMods[0].id)
+      if (visibleMods[0]) {
+        setSelectedModule(visibleMods[0].id)
+        const firstLp = lessonPlanList
+          .filter(lp => lp.module_id === visibleMods[0].id)
+          .sort((a, b) => a.plan_number - b.plan_number)[0]
+        setSelectedLessonPlanId(firstLp?.id ?? null)
+      }
 
       if (teacherId) {
         const { data: links } = await supabase
@@ -90,17 +106,47 @@ export default function HomeworkPage() {
     load()
   }, [])
 
-  // O(1) lookup: "studentId:moduleId" → status
+  // O(1) lookup: "studentId:moduleId" → status (module-level aggregate, used by overview/matrix)
   const subsLookup = useMemo(() =>
     new Map(allSubs.map(s => [`${s.student_id}:${s.module_id}`, s.status])),
     [allSubs]
   )
 
-  // subs for current module (entry view)
+  // subs for current module + lesson plan (entry view)
   const subs = useMemo(() =>
-    new Map(allSubs.filter(s => s.module_id === selectedModule).map(s => [s.student_id, s.status])),
-    [allSubs, selectedModule]
+    new Map(
+      allSubs
+        .filter(s => s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId)
+        .map(s => [s.student_id, s.status])
+    ),
+    [allSubs, selectedModule, selectedLessonPlanId]
   )
+
+  // lesson plans grouped by module, sorted by plan_number
+  const lessonPlansByModule = useMemo(() => {
+    const map = new Map<string, Pick<LessonPlan, 'id' | 'module_id' | 'topic' | 'plan_number'>[]>()
+    lessonPlans.forEach(lp => {
+      if (!lp.module_id) return
+      const arr = map.get(lp.module_id) ?? []
+      arr.push(lp)
+      map.set(lp.module_id, arr)
+    })
+    map.forEach(arr => arr.sort((a, b) => a.plan_number - b.plan_number))
+    return map
+  }, [lessonPlans])
+
+  function gotoModule(moduleId: string) {
+    const lps = lessonPlansByModule.get(moduleId) ?? []
+    setSelectedModule(moduleId)
+    setSelectedLessonPlanId(lps[0]?.id ?? null)
+    setView('entry')
+  }
+
+  function selectEntry(value: string) {
+    const [moduleId, lpId] = value.split('::')
+    setSelectedModule(moduleId)
+    setSelectedLessonPlanId(lpId || null)
+  }
 
   // unique subjects
   const subjects = useMemo(() =>
@@ -114,46 +160,77 @@ export default function HomeworkPage() {
     : modules
 
   useEffect(() => {
-    setTaskTitle(tasks.get(selectedModule)?.title ?? '')
+    setTaskTitle(tasks.get(taskKey(selectedModule, selectedLessonPlanId))?.title ?? '')
     setEditTask(false)
-  }, [selectedModule, tasks])
+  }, [selectedModule, selectedLessonPlanId, tasks])
 
   async function setStatus(studentId: string, status: HomeworkStatus) {
-    setAllSubs(prev => [
-      ...prev.filter(s => !(s.module_id === selectedModule && s.student_id === studentId)),
-      { id: '', student_id: studentId, module_id: selectedModule, status, created_at: '' },
-    ])
-    await supabase.from('homework_submissions').upsert(
-      { school_id: schoolId, student_id: studentId, module_id: selectedModule, status },
-      { onConflict: 'school_id,student_id,module_id' }
+    const existing = allSubs.find(s =>
+      s.student_id === studentId && s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId
     )
+    setAllSubs(prev => [
+      ...prev.filter(s => !(s.module_id === selectedModule && s.student_id === studentId && (s.lesson_plan_id ?? null) === selectedLessonPlanId)),
+      { id: existing?.id ?? '', student_id: studentId, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId, status, created_at: existing?.created_at ?? '' },
+    ])
+    if (existing) {
+      await supabase.from('homework_submissions').update({ status }).eq('id', existing.id)
+    } else {
+      const { data } = await supabase.from('homework_submissions')
+        .insert({ school_id: schoolId, student_id: studentId, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId, status })
+        .select().single()
+      if (data) {
+        setAllSubs(prev => prev.map(s =>
+          s.student_id === studentId && s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId
+            ? { ...s, id: (data as HomeworkSubmission).id }
+            : s
+        ))
+      }
+    }
   }
 
   async function markAllOnTime() {
     if (markingAll) return
     setMarkingAll(true)
-    setAllSubs(prev => [
-      ...prev.filter(s => !(s.module_id === selectedModule && visibleStudents.some(v => v.id === s.student_id))),
-      ...visibleStudents.map(s => ({ id: '', student_id: s.id, module_id: selectedModule, status: 'On_Time' as HomeworkStatus, created_at: '' })),
-    ])
-    await supabase.from('homework_submissions').upsert(
-      visibleStudents.map(s => ({ school_id: schoolId, student_id: s.id, module_id: selectedModule, status: 'On_Time' })),
-      { onConflict: 'school_id,student_id,module_id' }
+    const existingByStudent = new Map(
+      allSubs
+        .filter(s => s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId)
+        .map(s => [s.student_id, s])
     )
+    setAllSubs(prev => [
+      ...prev.filter(s => !(s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId && visibleStudents.some(v => v.id === s.student_id))),
+      ...visibleStudents.map(s => ({
+        id: existingByStudent.get(s.id)?.id ?? '',
+        student_id: s.id,
+        module_id: selectedModule,
+        lesson_plan_id: selectedLessonPlanId,
+        status: 'On_Time' as HomeworkStatus,
+        created_at: existingByStudent.get(s.id)?.created_at ?? '',
+      })),
+    ])
+    await Promise.all(visibleStudents.map(async s => {
+      const existing = existingByStudent.get(s.id)
+      if (existing) {
+        await supabase.from('homework_submissions').update({ status: 'On_Time' }).eq('id', existing.id)
+      } else {
+        await supabase.from('homework_submissions')
+          .insert({ school_id: schoolId, student_id: s.id, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId, status: 'On_Time' })
+      }
+    }))
     setMarkingAll(false)
   }
 
   async function saveTask() {
-    const existing = tasks.get(selectedModule)
+    const key = taskKey(selectedModule, selectedLessonPlanId)
+    const existing = tasks.get(key)
     if (existing) {
       await supabase.from('homework_tasks').update({ title: taskTitle }).eq('id', existing.id)
-      setTasks(prev => new Map(prev).set(selectedModule, { ...existing, title: taskTitle }))
+      setTasks(prev => new Map(prev).set(key, { ...existing, title: taskTitle }))
     } else {
       const { data } = await supabase
         .from('homework_tasks')
-        .insert({ school_id: schoolId, module_id: selectedModule, title: taskTitle })
+        .insert({ school_id: schoolId, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId, title: taskTitle })
         .select().single()
-      if (data) setTasks(prev => new Map(prev).set(selectedModule, data as HomeworkTask))
+      if (data) setTasks(prev => new Map(prev).set(key, data as HomeworkTask))
     }
     setEditTask(false)
   }
@@ -201,11 +278,13 @@ export default function HomeworkPage() {
     const late = modSubs.filter(s => s.status === 'Late').length
     const missing = modSubs.filter(s => s.status === 'Missing').length
     const pct = total > 0 ? Math.round((onTime + late) / total * 100) : 0
-    return { mod, task: tasks.get(mod.id), onTime, late, missing, total, pct }
+    const firstLp = (lessonPlansByModule.get(mod.id) ?? [])[0]
+    const task = tasks.get(taskKey(mod.id, firstLp?.id ?? null))
+    return { mod, task, onTime, late, missing, total, pct }
   })
 
   const doneCount = visibleStudents.filter(s => subs.has(s.id)).length
-  const currentTask = tasks.get(selectedModule)
+  const currentTask = tasks.get(taskKey(selectedModule, selectedLessonPlanId))
 
   if (loading) {
     return <div className="flex items-center justify-center py-24"><Loader2 className="animate-spin text-blue-500" size={32} /></div>
@@ -284,14 +363,17 @@ export default function HomeworkPage() {
                       <th className="sticky left-0 z-10 bg-gray-50 border-b border-gray-200 text-left px-3 py-2 font-semibold text-gray-600 w-36">
                         นักเรียน
                       </th>
-                      {filteredModules.map(mod => (
-                        <th key={mod.id} className="border-b border-gray-200 px-1 py-2 text-center font-medium text-gray-500 w-12">
-                          <div className="text-[10px] font-semibold text-gray-700 leading-tight">{mod.module_code}</div>
-                          <div className="text-[9px] text-gray-400 truncate max-w-[44px] mx-auto leading-tight mt-0.5">
-                            {tasks.get(mod.id)?.title?.slice(0, 6) ?? ''}
-                          </div>
-                        </th>
-                      ))}
+                      {filteredModules.map(mod => {
+                        const firstLp = (lessonPlansByModule.get(mod.id) ?? [])[0]
+                        return (
+                          <th key={mod.id} className="border-b border-gray-200 px-1 py-2 text-center font-medium text-gray-500 w-12">
+                            <div className="text-[10px] font-semibold text-gray-700 leading-tight">{mod.module_code}</div>
+                            <div className="text-[9px] text-gray-400 truncate max-w-[44px] mx-auto leading-tight mt-0.5">
+                              {tasks.get(taskKey(mod.id, firstLp?.id ?? null))?.title?.slice(0, 6) ?? ''}
+                            </div>
+                          </th>
+                        )
+                      })}
                       <th className="border-b border-gray-200 px-2 py-2 text-center font-medium text-gray-500 w-12">
                         <div className="text-[10px] font-semibold text-gray-700">รวม</div>
                       </th>
@@ -315,7 +397,7 @@ export default function HomeworkPage() {
                             return (
                               <td key={mod.id} className="border-b border-gray-100 text-center px-1 py-2">
                                 <button
-                                  onClick={() => { setSelectedModule(mod.id); setView('entry') }}
+                                  onClick={() => gotoModule(mod.id)}
                                   title={status === 'On_Time' ? 'ตรงเวลา' : status === 'Late' ? 'ส่งช้า' : status === 'Missing' ? 'ไม่ส่ง' : 'ยังไม่เช็ก'}
                                   className="inline-flex items-center justify-center w-6 h-6 rounded-full transition-transform hover:scale-110"
                                 >
@@ -348,7 +430,7 @@ export default function HomeworkPage() {
             const pctColor = pct >= 80 ? 'text-green-700' : pct >= 50 ? 'text-yellow-600' : 'text-red-600'
             return (
               <button key={mod.id}
-                onClick={() => { setSelectedModule(mod.id); setView('entry') }}
+                onClick={() => gotoModule(mod.id)}
                 className="w-full text-left bg-white border border-gray-200 rounded-2xl px-4 py-3 hover:border-blue-300 hover:bg-blue-50/40 transition-all">
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="min-w-0">
@@ -375,14 +457,36 @@ export default function HomeworkPage() {
       {/* ======= ENTRY VIEW ======= */}
       {view === 'entry' && (
         <div className="space-y-4">
-          {/* Module selector */}
+          {/* Module / lesson-plan selector — explodes into hours when a module has multiple plans */}
           <div className="relative">
-            <select value={selectedModule} onChange={e => setSelectedModule(e.target.value)}
+            <select value={`${selectedModule}::${selectedLessonPlanId ?? ''}`} onChange={e => selectEntry(e.target.value)}
               className="w-full appearance-none bg-white border border-gray-200 rounded-2xl px-4 py-3 pr-10 text-sm font-medium text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
-              {modules.map(m => <option key={m.id} value={m.id}>{m.module_code} — {m.title}</option>)}
+              {modules.map(m => {
+                const lps = lessonPlansByModule.get(m.id) ?? []
+                if (lps.length > 0) {
+                  return (
+                    <optgroup key={m.id} label={m.title}>
+                      {lps.map(lp => (
+                        <option key={lp.id} value={`${m.id}::${lp.id}`}>{`#${lp.plan_number} ${lp.topic}`}</option>
+                      ))}
+                    </optgroup>
+                  )
+                }
+                return <option key={m.id} value={`${m.id}::`}>{m.module_code} — {m.title}</option>
+              })}
             </select>
             <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           </div>
+          {(() => {
+            const mod = modules.find(m => m.id === selectedModule)
+            const lp = selectedLessonPlanId ? lessonPlans.find(l => l.id === selectedLessonPlanId) : null
+            if (!mod) return null
+            return (
+              <p className="text-xs text-gray-400 -mt-1">
+                {lp ? `${mod.title} — ${lp.topic}` : mod.title}
+              </p>
+            )
+          })()}
 
           {/* Task */}
           <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">

@@ -264,6 +264,7 @@ export interface HomeworkSubmission {
   id: string
   student_id: string
   module_id: string
+  lesson_plan_id: string | null
   status: HomeworkStatus
   created_at: string
 }
@@ -271,6 +272,7 @@ export interface HomeworkSubmission {
 export interface HomeworkTask {
   id: string
   module_id: string
+  lesson_plan_id: string | null
   title: string
   description: string | null
   created_at: string

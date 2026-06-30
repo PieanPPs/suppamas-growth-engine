@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import {
   CurriculumModule, Student, Teacher, FocusColor, StudentAssessment, AcademicSettings,
-  AttendanceRecord, AttendanceStatus,
+  AttendanceRecord, AttendanceStatus, LessonPlan,
 } from '@/lib/types'
 import { currentAcademicWeek, isCurrentWeekModule } from '@/lib/pacing'
 import { Card, CardContent } from '@/components/ui/card'
@@ -98,7 +98,7 @@ export default function AssessmentPage() {
   const [settings, setSettings] = useState<AcademicSettings | null>(null)
   const [selectedModule, setSelectedModule] = useState<string>('')
   const [lessonPlanId, setLessonPlanId] = useState<string | null>(null)
-  const [lessonPlanTopic, setLessonPlanTopic] = useState<string | null>(null)
+  const [lessonPlans, setLessonPlans] = useState<Pick<LessonPlan, 'id' | 'module_id' | 'topic' | 'plan_number'>[]>([])
   const [grades, setGrades] = useState<Record<string, StudentGrade>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
@@ -116,21 +116,18 @@ export default function AssessmentPage() {
       const lpId = params?.get('lesson_plan_id') ?? null
       if (lpId) setLessonPlanId(lpId)
 
-      const [{ data: stds }, { data: mods }, { data: ts }, { data: st }] = await Promise.all([
+      const [{ data: stds }, { data: mods }, { data: ts }, { data: st }, { data: lps }] = await Promise.all([
         supabase.from('students').select('*').eq('school_id', schoolId).order('class_name').order('student_number'),
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
         supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
         supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
+        supabase.from('lesson_plans').select('id, module_id, topic, plan_number').eq('school_id', schoolId).order('plan_number'),
       ])
       setStudents(stds ?? [])
       setModules(mods ?? [])
       setTeachers(ts ?? [])
       setSettings(st ?? null)
-
-      if (lpId) {
-        const { data: lp } = await supabase.from('lesson_plans').select('topic').eq('id', lpId).single()
-        if (lp?.topic) setLessonPlanTopic(lp.topic)
-      }
+      setLessonPlans((lps ?? []) as Pick<LessonPlan, 'id' | 'module_id' | 'topic' | 'plan_number'>[])
 
       const session = getSession()
       setIsTeacherRole(session?.role === 'teacher')
@@ -181,18 +178,52 @@ export default function AssessmentPage() {
     ? modules.filter(m => teacher.subjects.includes(m.subject))
     : modules
 
-  // default module: ?module= → current-week lesson → first
+  // lesson plans grouped by module, sorted by plan_number
+  const lessonPlansByModule = new Map<string, Pick<LessonPlan, 'id' | 'module_id' | 'topic' | 'plan_number'>[]>()
+  lessonPlans.forEach(lp => {
+    if (!lp.module_id) return
+    const arr = lessonPlansByModule.get(lp.module_id) ?? []
+    arr.push(lp)
+    lessonPlansByModule.set(lp.module_id, arr)
+  })
+  lessonPlansByModule.forEach(arr => arr.sort((a, b) => a.plan_number - b.plan_number))
+
+  // flattened selector: one entry per lesson plan (when a module has plans) or per module (when it doesn't)
+  type SelectorEntry = { moduleId: string; lessonPlanId: string | null }
+  const selectorEntries: SelectorEntry[] = visibleModules.flatMap(m => {
+    const lps = lessonPlansByModule.get(m.id) ?? []
+    return lps.length > 0
+      ? lps.map((lp): SelectorEntry => ({ moduleId: m.id, lessonPlanId: lp.id }))
+      : ([{ moduleId: m.id, lessonPlanId: null }] as SelectorEntry[])
+  })
+
+  // default selection: ?lesson_plan_id= → ?module= → current-week lesson → first
   useEffect(() => {
-    if (visibleModules.length === 0) return
-    if (selectedModule && visibleModules.some(m => m.id === selectedModule)) return
-    const wanted = typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('module')
-      : null
-    const fromUrl = wanted ? visibleModules.find(m => m.id === wanted) : undefined
+    if (selectorEntries.length === 0) return
+    const stillValid = selectedModule && selectorEntries.some(
+      e => e.moduleId === selectedModule && e.lessonPlanId === lessonPlanId
+    )
+    if (stillValid) return
+    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
+    const wantedLp = params?.get('lesson_plan_id')
+    const wantedModule = params?.get('module')
+    const fromLpUrl = wantedLp ? selectorEntries.find(e => e.lessonPlanId === wantedLp) : undefined
+    const fromModuleUrl = wantedModule ? selectorEntries.find(e => e.moduleId === wantedModule) : undefined
     const week = settings ? currentAcademicWeek(settings.term_start_date) : 0
-    const thisWeek = week > 0 ? visibleModules.find(m => isCurrentWeekModule(m, week)) : undefined
-    setSelectedModule((fromUrl ?? thisWeek ?? visibleModules[0]).id)
-  }, [visibleModules.map(m => m.id).join(','), settings])
+    const thisWeek = week > 0 ? selectorEntries.find(e => {
+      const m = visibleModules.find(vm => vm.id === e.moduleId)
+      return m && isCurrentWeekModule(m, week)
+    }) : undefined
+    const chosen = fromLpUrl ?? fromModuleUrl ?? thisWeek ?? selectorEntries[0]
+    setSelectedModule(chosen.moduleId)
+    setLessonPlanId(chosen.lessonPlanId)
+  }, [selectorEntries.map(e => `${e.moduleId}:${e.lessonPlanId}`).join(','), settings])
+
+  function selectEntry(value: string) {
+    const [moduleId, lpId] = value.split('::')
+    setSelectedModule(moduleId)
+    setLessonPlanId(lpId || null)
+  }
 
   // init grades + prefill today's existing records (one per student/module/day)
   useEffect(() => {
@@ -427,34 +458,45 @@ export default function AssessmentPage() {
         )}
       </div>
 
-      {/* Lesson-plan mode banner */}
-      {lessonPlanId && (
-        <div className="flex items-center gap-2 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2.5">
-          <div className="w-2 h-2 rounded-full bg-violet-500 flex-shrink-0" />
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold text-violet-500 uppercase tracking-wide">Exit Ticket รายชั่วโมง</p>
-            <p className="text-sm font-semibold text-violet-900 truncate">{lessonPlanTopic ?? '...'}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Module selector — hidden when locked to lesson plan */}
-      {!lessonPlanId && (
-        <div className="relative">
-          <select
-            value={selectedModule}
-            onChange={e => setSelectedModule(e.target.value)}
-            className="w-full appearance-none bg-white border border-gray-200 rounded-xl px-4 py-3 pr-10 text-sm font-medium text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-          >
-            {visibleModules.map(m => (
-              <option key={m.id} value={m.id}>
+      {/* Module / lesson-plan selector — explodes into hours when a module has multiple plans */}
+      <div className="relative">
+        <select
+          value={`${selectedModule}::${lessonPlanId ?? ''}`}
+          onChange={e => selectEntry(e.target.value)}
+          className="w-full appearance-none bg-white border border-gray-200 rounded-xl px-4 py-3 pr-10 text-sm font-medium text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+        >
+          {visibleModules.map(m => {
+            const lps = lessonPlansByModule.get(m.id) ?? []
+            if (lps.length > 0) {
+              return (
+                <optgroup key={m.id} label={m.title}>
+                  {lps.map(lp => (
+                    <option key={lp.id} value={`${m.id}::${lp.id}`}>
+                      {`#${lp.plan_number} ${lp.topic}`}
+                    </option>
+                  ))}
+                </optgroup>
+              )
+            }
+            return (
+              <option key={m.id} value={`${m.id}::`}>
                 {m.module_code} — {m.title}
               </option>
-            ))}
-          </select>
-          <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-        </div>
-      )}
+            )
+          })}
+        </select>
+        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+      </div>
+      {(() => {
+        const mod = visibleModules.find(m => m.id === selectedModule)
+        const lp = lessonPlanId ? lessonPlans.find(l => l.id === lessonPlanId) : null
+        if (!mod) return null
+        return (
+          <p className="text-xs text-gray-400 -mt-1">
+            {lp ? `${mod.title} — ${lp.topic}` : mod.title}
+          </p>
+        )
+      })()}
 
       {/* Progress bar */}
       <div className="flex items-center justify-between text-xs text-gray-500">
