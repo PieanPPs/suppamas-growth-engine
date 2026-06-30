@@ -119,7 +119,7 @@ export default function Pp5Page() {
   }, [subjectOptions.map(c => c.subject_key).join(','), subject])
 
   const allRooms = Array.from(new Set(students.map(s => s.class_name).filter(Boolean))).sort()
-  const roomOptions = boundRooms.length > 0 ? [...boundRooms].sort() : allRooms
+  const roomOptions = boundRooms.length > 0 ? [...new Set(boundRooms)].sort() : allRooms
 
   useEffect(() => {
     if (roomOptions.length === 0) return

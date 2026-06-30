@@ -80,6 +80,14 @@ export interface TestItem {
   indicator_code: string | null
 }
 
+export interface TestItemResponse {
+  id: string
+  test_id: string
+  test_item_id: string
+  student_id: string
+  correct: boolean
+}
+
 export type ScorePhase = 'before_mid' | 'after_mid' | 'midterm' | 'final'
 export type ScoreSource = 'manual' | 'test' | 'stars'
 

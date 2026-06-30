@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import {
-  Student, Teacher, Course, Indicator, Test, TestType, TestScore, TestIndicator, TestItem,
+  Student, Teacher, Course, Indicator, Test, TestType, TestScore, TestIndicator, TestItem, TestItemResponse,
 } from '@/lib/types'
 import { ScoreModeSwitch } from '@/components/score-mode-switch'
 import { RoomFilter, readStoredRoom, storeRoom } from '@/components/room-filter'
@@ -15,6 +15,7 @@ import { ParsedExamItem } from '@/lib/exam-import'
 import {
   Loader2, ChevronDown, UserCircle2, Plus, X, Check, ArrowLeft, Trash2,
   ClipboardPaste, Save, FileSpreadsheet, Target, CalendarDays, Info, Wand2, Printer, FileText,
+  BarChart2,
 } from 'lucide-react'
 
 const TEACHER_KEY = 'sge_teacher_id'
@@ -47,6 +48,7 @@ export default function TestsPage() {
   const [testIndicators, setTestIndicators] = useState<TestIndicator[]>([])
   const [allScores, setAllScores] = useState<TestScore[]>([])
   const [testItems, setTestItems] = useState<TestItem[]>([])
+  const [allResponses, setAllResponses] = useState<TestItemResponse[]>([])
   const [promptOpen, setPromptOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
 
@@ -65,7 +67,7 @@ export default function TestsPage() {
   const [savedFlash, setSavedFlash] = useState(false)
 
   async function loadAll() {
-    const [{ data: ts }, { data: crs }, { data: inds }, { data: stds }, { data: tst }, { data: ti }, { data: sc }, { data: items }] = await Promise.all([
+    const [{ data: ts }, { data: crs }, { data: inds }, { data: stds }, { data: tst }, { data: ti }, { data: sc }, { data: items }, { data: resp }] = await Promise.all([
       supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('courses').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('indicators').select('*').eq('school_id', schoolId).order('standard').order('sequence_order'),
@@ -74,10 +76,11 @@ export default function TestsPage() {
       supabase.from('test_indicators').select('*'),
       supabase.from('test_scores').select('*').eq('school_id', schoolId),
       supabase.from('test_items').select('*').order('item_no'),
+      supabase.from('test_item_responses').select('*').eq('school_id', schoolId),
     ])
     setTeachers(ts ?? []); setCourses(crs ?? []); setIndicators(inds ?? [])
     setStudents(stds ?? []); setTests(tst ?? []); setTestIndicators(ti ?? []); setAllScores(sc ?? [])
-    setTestItems(items ?? [])
+    setTestItems(items ?? []); setAllResponses(resp ?? [])
     const stored = typeof window !== 'undefined' ? localStorage.getItem(TEACHER_KEY) : null
     if (stored) setTeacherId(stored)
     setLoading(false)
@@ -100,7 +103,7 @@ export default function TestsPage() {
 
   const teacher = teachers.find(t => t.id === teacherId)
   const allRooms = Array.from(new Set(students.map(s => s.class_name).filter(Boolean))).sort()
-  const roomOptions = boundRooms.length > 0 ? [...boundRooms].sort() : allRooms
+  const roomOptions = boundRooms.length > 0 ? [...new Set(boundRooms)].sort() : allRooms
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null)
 
   useEffect(() => {
@@ -211,6 +214,20 @@ export default function TestsPage() {
     setPasteOpen(false); setPasteText('')
   }
 
+  async function toggleItemResponse(testId: string, itemId: string, studentId: string, nowCorrect: boolean) {
+    await supabase.from('test_item_responses').upsert(
+      { school_id: schoolId, test_id: testId, test_item_id: itemId, student_id: studentId, correct: nowCorrect },
+      { onConflict: 'test_item_id,student_id' }
+    )
+    const updated = allResponses
+      .filter(r => !(r.test_item_id === itemId && r.student_id === studentId))
+      .concat({ id: '', test_id: testId, test_item_id: itemId, student_id: studentId, correct: nowCorrect })
+    setAllResponses(updated)
+    // recalculate total score for this student from all responses
+    const correctCount = updated.filter(r => r.test_id === testId && r.student_id === studentId && r.correct).length
+    setScoreInputs(prev => ({ ...prev, [studentId]: String(correctCount) }))
+  }
+
   if (loading) {
     return <div className="flex items-center justify-center py-24"><Loader2 className="animate-spin text-blue-500" size={32} /></div>
   }
@@ -219,9 +236,11 @@ export default function TestsPage() {
   const scoresOf = (testId: string) => allScores.filter(s => s.test_id === testId)
   const itemsOf = (testId: string) => testItems.filter(i => i.test_id === testId)
   const indicatorCodes = (testId: string) =>
-    testIndicators.filter(ti => ti.test_id === testId)
-      .map(ti => indicators.find(i => i.id === ti.indicator_id)?.code)
-      .filter(Boolean) as string[]
+    Array.from(new Set(
+      testIndicators.filter(ti => ti.test_id === testId)
+        .map(ti => indicators.find(i => i.id === ti.indicator_id)?.code)
+        .filter(Boolean) as string[]
+    ))
 
   // ตัวชี้วัดสำหรับ Prompt Kit: ใช้ที่ติ๊กไว้ ถ้าไม่ติ๊กเลยใช้ทั้งวิชา
   const promptIndicators = (testId: string, subject: string) => {
@@ -257,12 +276,14 @@ export default function TestsPage() {
 
   // ============ SCORE ENTRY VIEW ============
   if (activeTest) {
+    const activeItems = itemsOf(activeTest.id) // items sorted by item_no
+    const hasItems = activeItems.length > 0
     const entered = visibleStudents.filter(s => scoreInputs[s.id] !== '' && scoreInputs[s.id] != null).length
     const valid = visibleStudents.map(s => scoreInputs[s.id]).filter(v => v !== '' && v != null && !isNaN(Number(v))).map(Number)
     const avg = valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : null
 
     return (
-      <div className="space-y-4 pb-28">
+      <div className="space-y-4 pb-28 font-sarabun">
         <button onClick={() => setActiveTest(null)} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
           <ArrowLeft size={16} /> รายการแบบทดสอบ
         </button>
@@ -314,24 +335,53 @@ export default function TestsPage() {
           </button>
         </div>
 
+        {/* ── Item Analysis (only when test has items and someone has responses) ── */}
+        {hasItems && allResponses.some(r => r.test_id === activeTest.id) && (
+          <div className="bg-white border border-gray-200 rounded-2xl p-3">
+            <p className="text-xs font-bold text-gray-600 flex items-center gap-1 mb-2.5">
+              <BarChart2 size={13} className="text-blue-500" /> วิเคราะห์รายข้อ (% ถูก)
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {activeItems.map(item => {
+                const rsp = allResponses.filter(r => r.test_item_id === item.id && visibleStudents.some(s => s.id === r.student_id))
+                const correctCount = rsp.filter(r => r.correct).length
+                const total = rsp.length
+                const pct = total > 0 ? correctCount / total : null
+                return (
+                  <div key={item.id} className={`flex flex-col items-center rounded-xl px-2 py-1.5 min-w-[2.8rem] ${
+                    pct === null ? 'bg-gray-50 border border-gray-100' :
+                    pct >= 0.8 ? 'bg-green-100' :
+                    pct >= 0.5 ? 'bg-yellow-100' :
+                    'bg-red-100'
+                  }`}>
+                    <span className="text-xs font-bold text-gray-700">{item.item_no}</span>
+                    {item.indicator_code && <span className="text-[9px] text-gray-500 leading-tight">{item.indicator_code}</span>}
+                    {pct !== null && <span className={`text-[10px] font-semibold mt-0.5 ${pct >= 0.8 ? 'text-green-700' : pct >= 0.5 ? 'text-yellow-700' : 'text-red-600'}`}>{Math.round(pct * 100)}%</span>}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="space-y-1.5">
           {visibleStudents.map((s, i) => {
             const val = scoreInputs[s.id] ?? ''
             const score = val !== '' && !isNaN(Number(val)) ? Number(val) : null
             const pct = score != null ? score / activeTest.max_score : null
             const isExpanded = expandedStudent === s.id
-            const scoreButtons = Array.from({ length: activeTest.max_score + 1 }, (_, n) => n)
+            // per-item responses for this student
+            const studentResponses = allResponses.filter(r => r.test_id === activeTest.id && r.student_id === s.id)
+            const responseMap = new Map(studentResponses.map(r => [r.test_item_id, r.correct]))
 
             function pickScore(n: number) {
               setScoreInputs(prev => ({ ...prev, [s.id]: String(n) }))
-              // auto-advance to next student
               const nextStudent = visibleStudents[i + 1]
               setExpandedStudent(nextStudent ? nextStudent.id : null)
             }
 
             return (
               <div key={s.id} className={`bg-white border rounded-2xl overflow-hidden transition-all ${isExpanded ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-200'}`}>
-                {/* row header — tap to expand */}
                 <button
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
                   onClick={() => setExpandedStudent(isExpanded ? null : s.id)}
@@ -341,47 +391,75 @@ export default function TestsPage() {
                     <p className="text-sm text-gray-800 truncate">{s.name}</p>
                     <p className="text-[10px] text-gray-400">{s.class_name}{s.student_number ? ` · เลขที่ ${s.student_number}` : ''}</p>
                   </div>
+                  {hasItems && studentResponses.length > 0 && (
+                    <div className="flex gap-0.5 flex-wrap justify-end max-w-[120px]">
+                      {activeItems.map(item => {
+                        const c = responseMap.get(item.id)
+                        return <span key={item.id} className={`w-3 h-3 rounded-sm ${c === true ? 'bg-green-400' : c === false ? 'bg-red-300' : 'bg-gray-200'}`} />
+                      })}
+                    </div>
+                  )}
                   {score != null ? (
-                    <span className={`text-sm font-bold px-2.5 py-1 rounded-lg ${pct! >= 0.5 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                    <span className={`text-sm font-bold px-2.5 py-1 rounded-lg flex-shrink-0 ${pct! >= 0.5 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                       {score}<span className="text-[10px] font-normal text-gray-400 ml-0.5">/{activeTest.max_score}</span>
                     </span>
                   ) : (
-                    <span className="text-sm text-gray-300 font-medium px-2.5 py-1 border border-dashed border-gray-200 rounded-lg">—</span>
+                    <span className="text-sm text-gray-300 font-medium px-2.5 py-1 border border-dashed border-gray-200 rounded-lg flex-shrink-0">—</span>
                   )}
                 </button>
 
-                {/* expanded: score button grid */}
                 {isExpanded && (
                   <div className="px-3 pb-3 border-t border-blue-100">
-                    <div className="grid grid-cols-6 gap-1.5 mt-2.5">
-                      {scoreButtons.map(n => (
-                        <button
-                          key={n}
-                          onClick={() => pickScore(n)}
-                          className={`py-2 rounded-xl text-sm font-bold transition-all active:scale-95 ${
-                            score === n
-                              ? 'bg-blue-600 text-white shadow-sm'
-                              : 'bg-gray-100 text-gray-700 hover:bg-blue-50 hover:text-blue-700'
-                          }`}
-                        >
-                          {n}
-                        </button>
-                      ))}
-                    </div>
-                    {/* manual input fallback */}
-                    <div className="flex items-center gap-2 mt-2.5">
-                      <span className="text-xs text-gray-400">หรือพิมพ์:</span>
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        min={0}
-                        max={activeTest.max_score}
-                        value={val}
-                        onChange={e => setScoreInputs(prev => ({ ...prev, [s.id]: e.target.value }))}
-                        placeholder="—"
-                        className="w-20 text-center text-sm font-semibold border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                      />
-                    </div>
+                    {hasItems ? (
+                      /* Per-item toggle mode */
+                      <div className="mt-2.5 space-y-2">
+                        <p className="text-[10px] text-gray-400">แตะข้อที่ <span className="text-green-600 font-semibold">ถูก</span> — ข้อที่ยังเป็นสีเทา = ผิด</p>
+                        <div className="grid grid-cols-5 gap-1.5">
+                          {activeItems.map(item => {
+                            const isCorrect = responseMap.get(item.id) ?? false
+                            return (
+                              <button
+                                key={item.id}
+                                onClick={() => toggleItemResponse(activeTest.id, item.id, s.id, !isCorrect)}
+                                className={`py-2 rounded-xl text-xs font-bold transition-all active:scale-95 flex flex-col items-center gap-0.5 ${
+                                  isCorrect ? 'bg-green-500 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                }`}
+                              >
+                                <span className="text-sm">{item.item_no}</span>
+                                {item.indicator_code && <span className="text-[8px] opacity-70 leading-none">{item.indicator_code}</span>}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        <p className="text-[10px] text-blue-600 font-semibold">คะแนนรวม: {score ?? 0}/{activeTest.max_score} · อัปเดตอัตโนมัติ</p>
+                      </div>
+                    ) : (
+                      /* Total-score button mode (no items) */
+                      <div>
+                        <div className="grid grid-cols-6 gap-1.5 mt-2.5">
+                          {Array.from({ length: activeTest.max_score + 1 }, (_, n) => n).map(n => (
+                            <button
+                              key={n}
+                              onClick={() => pickScore(n)}
+                              className={`py-2 rounded-xl text-sm font-bold transition-all active:scale-95 ${
+                                score === n ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700 hover:bg-blue-50 hover:text-blue-700'
+                              }`}
+                            >
+                              {n}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-2 mt-2.5">
+                          <span className="text-xs text-gray-400">หรือพิมพ์:</span>
+                          <input
+                            type="number" inputMode="decimal" min={0} max={activeTest.max_score} value={val}
+                            onChange={e => setScoreInputs(prev => ({ ...prev, [s.id]: e.target.value }))}
+                            placeholder="—"
+                            className="w-20 text-center text-sm font-semibold border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -476,7 +554,7 @@ export default function TestsPage() {
 
   // ============ LIST VIEW ============
   return (
-    <div className="space-y-4 pb-8">
+    <div className="space-y-4 pb-8 font-sarabun">
       <div>
         <h2 className="text-xl font-bold text-gray-900">บันทึกคะแนน</h2>
         <p className="text-sm text-gray-500 mt-1">แบบทดสอบ — สอบเก็บคะแนน กลางภาค ปลายภาค Pre-NT</p>

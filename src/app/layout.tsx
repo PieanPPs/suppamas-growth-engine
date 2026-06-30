@@ -1,11 +1,17 @@
 import type { Metadata } from 'next'
-import { Anuphan, Geist_Mono } from 'next/font/google'
+import { Anuphan, Geist_Mono, Sarabun } from 'next/font/google'
 import './globals.css'
 import { Navigation } from '@/components/navigation'
 
-// Anuphan: ฟอนต์ไทย loopless สมัยใหม่ (รองรับละตินในตัว) — ตัวไทยคมทุกหน้า
 const anuphan = Anuphan({ subsets: ['thai', 'latin'], display: 'swap' })
 const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] })
+// Sarabun (TH Sarabun New) — ฟอนต์มีหัว สำหรับหน้าแบบทดสอบและเอกสารราชการ
+const sarabun = Sarabun({
+  weight: ['400', '600', '700'],
+  subsets: ['thai', 'latin'],
+  variable: '--font-sarabun',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'Suppamas Growth Engine',
@@ -23,7 +29,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="th" className={`${geistMono.variable} h-full antialiased`}>
+    <html lang="th" className={`${geistMono.variable} ${sarabun.variable} h-full antialiased`}>
       <body className={`${anuphan.className} min-h-full flex flex-col bg-gray-50`}>
         <Navigation />
         <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-6">{children}</main>
