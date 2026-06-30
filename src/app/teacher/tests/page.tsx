@@ -283,7 +283,7 @@ export default function TestsPage() {
     const avg = valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : null
 
     return (
-      <div className="space-y-4 pb-28 font-sarabun">
+      <div className="space-y-4 pb-28">
         <button onClick={() => setActiveTest(null)} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
           <ArrowLeft size={16} /> รายการแบบทดสอบ
         </button>
@@ -554,7 +554,7 @@ export default function TestsPage() {
 
   // ============ LIST VIEW ============
   return (
-    <div className="space-y-4 pb-8 font-sarabun">
+    <div className="space-y-4 pb-8">
       <div>
         <h2 className="text-xl font-bold text-gray-900">บันทึกคะแนน</h2>
         <p className="text-sm text-gray-500 mt-1">แบบทดสอบ — สอบเก็บคะแนน กลางภาค ปลายภาค Pre-NT</p>
