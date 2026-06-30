@@ -69,7 +69,8 @@ const LABELS: { key: keyof ParsedExamItem | 'no'; re: RegExp }[] = [
 /** แตกข้อความที่วางกลับจากเว็บ AI (หรือข้อสอบเก่าที่จัดรูปแบบเดียวกัน) เป็นรายข้อ */
 export function parseExamText(text: string): { items: ParsedExamItem[]; warnings: string[] } {
   const warnings: string[] = []
-  const cleaned = text.replace(/\r/g, '')
+  // Strip markdown heading markers (## ### etc.) that Gemini/Claude prepend to lines
+  const cleaned = text.replace(/\r/g, '').replace(/^#{1,6}\s+/gm, '')
   let blocks = cleaned.split(/^\s*-{3,}\s*$/m).map(b => b.trim()).filter(Boolean)
   // Fallback: no --- found → split by "ข้อ: N" line starts so AI output without separators still parses
   if (blocks.length <= 1) {
