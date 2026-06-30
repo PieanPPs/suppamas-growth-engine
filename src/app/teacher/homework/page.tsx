@@ -53,7 +53,12 @@ export default function HomeworkPage() {
         supabase.from('homework_submissions').select('*').eq('school_id', schoolId),
       ])
 
-      const teacherId = typeof window !== 'undefined' ? localStorage.getItem(TEACHER_KEY) : null
+      // For teacher role use session.userId (set on login) — not TEACHER_KEY which can hold
+      // a stale ID from when dropdown was still available on other pages.
+      const session = getSession()
+      const teacherId = session?.role === 'teacher' && session.userId
+        ? session.userId
+        : (typeof window !== 'undefined' ? localStorage.getItem(TEACHER_KEY) : null)
 
       let visibleMods = (mods ?? []) as CurriculumModule[]
       if (teacherId) {
