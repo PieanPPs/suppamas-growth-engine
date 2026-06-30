@@ -28,7 +28,7 @@ const SYSTEMS = [
   { icon: BookPlus, title: 'โครงสร้างรายวิชา', desc: 'คลังตัวชี้วัดกลาง ครูติ๊กเลือก ไม่ต้องพิมพ์' },
   { icon: ClipboardList, title: 'แผน & จังหวะสอน', desc: 'ส่งแผนย่อ + เช็คอิน 3 สีทุกศุกร์' },
   { icon: Sparkles, title: 'ประเมิน 3 มิติใน 5 วิ', desc: 'ดาววิชาการ + ไฟสมาธิ + ทักษะสังคม' },
-  { icon: BookCheck, title: 'การบ้าน QR', desc: 'สแกนปุ๊บ เช็คส่งงานปั๊บ' },
+  { icon: BookCheck, title: 'ภาระงาน/ชิ้นงาน QR', desc: 'สแกนปุ๊บ เช็คส่งงานปั๊บ' },
   { icon: Gauge, title: 'ศูนย์วิเคราะห์ไขว้', desc: 'จับ Speeding Hazard เตือนก่อนเด็กสอบตก' },
   { icon: Heart, title: 'การ์ดความสุขผู้ปกครอง', desc: 'รายงานถึงมือถือพ่อแม่ทุกศุกร์ผ่าน LINE' },
 ]

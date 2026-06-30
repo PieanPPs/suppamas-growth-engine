@@ -112,7 +112,7 @@ export default function HeroesPage() {
         <span className="flex items-center gap-1"><Star size={12} className="text-yellow-400" /> วิชาการ</span>
         <span className="flex items-center gap-1"><Smile size={12} className="text-blue-400" /> ทักษะสังคม</span>
         <span className="flex items-center gap-1"><Heart size={12} className="text-green-500" /> สมาธิ</span>
-        <span className="flex items-center gap-1"><BookCheck size={12} className="text-indigo-500" /> การบ้าน</span>
+        <span className="flex items-center gap-1"><BookCheck size={12} className="text-indigo-500" /> ภาระงาน/ชิ้นงาน</span>
       </div>
 
       {/* Rest of the ranking */}

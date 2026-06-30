@@ -81,7 +81,7 @@ export default function ImpactReportPage() {
           <p>① <strong>โครงสร้างรายวิชา</strong> — ครูวิเคราะห์หลักสูตรจากคลังตัวชี้วัดกลาง จัดหน่วยการเรียนรู้รายสัปดาห์ ({counts.indicators} ตัวชี้วัด, {counts.modules} หน่วย)
             ② <strong>ส่งแผนและเช็คอินจังหวะสอน</strong> — แผนย่อ + สถานะ 3 สีทุกศุกร์ ({counts.plans + counts.pacingLogs} รายการ)
             ③ <strong>ประเมิน 3 มิติใน 5 วินาที</strong> — ดาววิชาการ + ไฟจราจรสมาธิ + ทักษะสังคม ({counts.assessments} รายการ)
-            ④ <strong>การบ้านอัจฉริยะ</strong> — สแกน QR เช็คส่งงาน ({counts.homework} รายการ)
+            ④ <strong>ภาระงาน/ชิ้นงาน</strong> — สแกน QR เช็คส่งงาน ({counts.homework} รายการ)
             ⑤ <strong>ศูนย์วิเคราะห์ไขว้</strong> — เมทริกซ์ Perfect Pacing / Speeding Hazard / Deep Learning / Critical Rescue + เตือนภัยล่วงหน้ารายบุคคล
             ⑥ <strong>รายงานผู้ปกครอง</strong> — การ์ดความสุขดิจิทัลส่งผ่าน LINE</p>
           <p>เทคโนโลยี: Next.js + Supabase + Cloudflare Pages (ไม่มีค่าลิขสิทธิ์) ใช้งานบนมือถือ/แท็บเล็ตของครูที่มีอยู่เดิม</p>

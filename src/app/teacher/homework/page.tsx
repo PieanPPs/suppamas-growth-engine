@@ -218,7 +218,7 @@ export default function HomeworkPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">การบ้าน</h2>
+          <h2 className="text-xl font-bold text-gray-900">ภาระงาน/ชิ้นงาน</h2>
           <p className="text-sm text-gray-500 mt-1">สรุปภาพรวม · ตารางรายนักเรียน · เช็กส่งงาน</p>
         </div>
         <motion.button whileTap={{ scale: 0.95 }} onClick={() => setScanning(true)}

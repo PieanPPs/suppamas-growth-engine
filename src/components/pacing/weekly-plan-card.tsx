@@ -277,7 +277,7 @@ export function WeeklyPlanCard({
           <input
             value={homework}
             onChange={e => setHomework(e.target.value)}
-            placeholder="ระบุการบ้าน (ถ้ามี)"
+            placeholder="ระบุภาระงาน/ชิ้นงาน (ถ้ามี)"
             className="w-full text-sm border border-amber-200 bg-amber-50/40 rounded-xl pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-300"
           />
         </div>

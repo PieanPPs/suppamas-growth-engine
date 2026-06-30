@@ -120,7 +120,7 @@ export function computeBeforeAfter(
     rows: [
       { metric: 'คะแนน Exit Ticket เฉลี่ย', unit: '/2', before: before.avgScore, after: after.avgScore, goodWhenUp: true },
       { metric: 'สมาธิ 🟢 (Fully Engaged)', unit: '%', before: before.greenPct, after: after.greenPct, goodWhenUp: true },
-      { metric: 'ส่งการบ้านตรงเวลา', unit: '%', before: before.onTimePct, after: after.onTimePct, goodWhenUp: true },
+      { metric: 'ส่งภาระงาน/ชิ้นงานตรงเวลา', unit: '%', before: before.onTimePct, after: after.onTimePct, goodWhenUp: true },
     ],
   }
 }

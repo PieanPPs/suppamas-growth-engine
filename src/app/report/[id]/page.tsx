@@ -173,7 +173,7 @@ export default function HappinessReportPage() {
       {/* Homework discipline */}
       {(homework.onTime + homework.late + homework.missing) > 0 && (
         <div className="bg-white border border-gray-200 rounded-2xl px-5 py-4 shadow-sm">
-          <h2 className="text-sm font-bold text-gray-800 mb-3">วินัยการส่งการบ้าน</h2>
+          <h2 className="text-sm font-bold text-gray-800 mb-3">วินัยการส่งภาระงาน/ชิ้นงาน</h2>
           <div className="grid grid-cols-3 gap-2 text-center">
             <div>
               <p className="text-xl font-bold text-green-600">{homework.onTime}</p>

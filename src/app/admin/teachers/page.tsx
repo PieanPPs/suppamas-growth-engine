@@ -157,7 +157,7 @@ export default function TeachersPage() {
           <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <UserCog size={20} className="text-teal-600" /> จัดการครู
           </h2>
-          <p className="text-sm text-gray-500 mt-1">ผูกครูกับห้องเรียนและวิชา — หน้าบันทึกคะแนน/การบ้านจะกรองให้อัตโนมัติ</p>
+          <p className="text-sm text-gray-500 mt-1">ผูกครูกับห้องเรียนและวิชา — หน้าบันทึกคะแนน/ภาระงาน/ชิ้นงานจะกรองให้อัตโนมัติ</p>
         </div>
         <button onClick={() => openEdit()}
           className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1 flex-shrink-0">

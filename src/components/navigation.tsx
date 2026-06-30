@@ -13,7 +13,7 @@ type NavItem = { href: string; label: string; icon: React.ComponentType<{size?:n
 const NAV_ITEMS: NavItem[] = [
   { href: '/teacher/pacing',     label: 'แผนสอน',                              icon: BookOpen,      small: false, roles: null },
   { href: '/teacher/assessment', label: 'เช็คชื่อ/บันทึกพฤติกรรม/แบบทดสอบ', icon: ClipboardList, small: true,  roles: null },
-  { href: '/teacher/homework',   label: 'การบ้าน',                             icon: BookCheck,     small: false, roles: null },
+  { href: '/teacher/homework',   label: 'ภาระงาน/ชิ้นงาน',                    icon: BookCheck,     small: true,  roles: null },
   { href: '/overview',           label: 'ภาพรวม',                              icon: BarChart3,     small: false, roles: null },
 ]
 
