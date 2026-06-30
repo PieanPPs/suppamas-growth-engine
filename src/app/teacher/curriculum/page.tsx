@@ -17,11 +17,13 @@ import {
   Library, ClipboardPaste, Wand2,
 } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
+import { getSession } from '@/lib/auth'
 
 export default function CurriculumPage() {
   const supabase = createClient()
   const schoolId = getSchoolId()
   const [loading, setLoading] = useState(true)
+  const [isTeacherRole, setIsTeacherRole] = useState(false)
   const [courses, setCourses] = useState<Course[]>([])
   const [subject, setSubject] = useState<string>('')
   const [indicators, setIndicators] = useState<Indicator[]>([])
@@ -55,13 +57,26 @@ export default function CurriculumPage() {
 
   useEffect(() => {
     async function init() {
-      const [{ data: cs }, { data: settings }] = await Promise.all([
+      const session = getSession()
+      const isTeacher = session?.role === 'teacher'
+      setIsTeacherRole(isTeacher)
+
+      const [{ data: allCourses }, { data: settings }] = await Promise.all([
         supabase.from('courses').select('*').eq('school_id', schoolId).order('name'),
         supabase.from('academic_settings').select('total_weeks').eq('school_id', schoolId).maybeSingle(),
       ])
-      setCourses((cs ?? []) as Course[])
+
+      let visibleCourses = (allCourses ?? []) as Course[]
+      if (isTeacher && session?.userId) {
+        const { data: t } = await supabase
+          .from('teachers').select('subjects').eq('id', session.userId).maybeSingle()
+        const assigned = new Set<string>(t?.subjects ?? [])
+        if (assigned.size > 0) visibleCourses = visibleCourses.filter(c => assigned.has(c.subject_key))
+      }
+
+      setCourses(visibleCourses)
       setTotalWeeks((settings as AcademicSettings)?.total_weeks ?? 20)
-      const first = cs?.[0]?.subject_key ?? ''
+      const first = visibleCourses[0]?.subject_key ?? ''
       setSubject(first)
       if (first) await reloadCourseData(first)
       setLoading(false)
@@ -217,10 +232,12 @@ export default function CurriculumPage() {
           </select>
           <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         </div>
-        <button onClick={() => setAddingCourse(v => !v)}
-          className="flex-shrink-0 px-3 bg-white border border-gray-200 rounded-2xl text-gray-500 hover:bg-gray-50">
-          <Plus size={18} />
-        </button>
+        {!isTeacherRole && (
+          <button onClick={() => setAddingCourse(v => !v)}
+            className="flex-shrink-0 px-3 bg-white border border-gray-200 rounded-2xl text-gray-500 hover:bg-gray-50">
+            <Plus size={18} />
+          </button>
+        )}
       </div>
 
       <AnimatePresence>

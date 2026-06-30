@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import {
-  UploadCloud, GraduationCap, Shuffle, Settings, ChevronRight, Wrench, Flag, UserCog, FileText,
+  UploadCloud, GraduationCap, Shuffle, Settings, ChevronRight, Wrench, Flag, UserCog, FileText, BookMarked,
 } from 'lucide-react'
 
 const sections = [
@@ -24,8 +24,12 @@ const sections = [
     title: 'จัดการห้องเรียน & นักเรียน', desc: 'ดู/เพิ่ม/แก้ไข/ย้ายห้อง รายคน',
   },
   {
+    href: '/admin/courses', icon: BookMarked, color: 'bg-emerald-500',
+    title: 'จัดการรายวิชา', desc: 'สร้างวิชา · ผูกครูกับวิชาและสายชั้น · ไปสู่โครงสร้างรายวิชา',
+  },
+  {
     href: '/admin/teachers', icon: UserCog, color: 'bg-teal-500',
-    title: 'จัดการครู', desc: 'เพิ่มครู · ผูกห้องเรียนและวิชาที่สอน',
+    title: 'จัดการครู', desc: 'เพิ่มครู · ผูกห้องเรียนและวิชาที่สอน · ตั้งรหัส PIN',
   },
   {
     href: '/teacher/pp6/print', icon: FileText, color: 'bg-violet-500',

@@ -14,13 +14,11 @@ import { AlertTriangle, BookOpen, Users, TrendingUp, Loader2, TrendingDown } fro
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
 
-/** Extract grade prefixes, e.g. "ภาษาไทย ป.3" → "ป.3" */
-function extractGrades(subjects: string[]): string[] {
-  const grades = subjects.map(s => {
-    const m = s.match(/((?:ป|ม)\.\d+)/)
-    return m?.[1] ?? null
-  }).filter(Boolean) as string[]
-  return [...new Set(grades)]
+/** Extract grade from course.grade or course.name, e.g. "ภาษาไทย ป.3" → "ป.3" */
+function gradeFromCourse(grade: string | null, name: string): string | null {
+  if (grade) return grade
+  const m = name.match(/((?:ป|ม)\.\d+)/)
+  return m?.[1] ?? null
 }
 
 type ModuleSummary = {
@@ -48,13 +46,20 @@ export default function TeacherOverviewPage() {
       const session = getSession()
       if (!session?.userId) { setLoading(false); return }
 
-      // Fetch teacher's subjects to derive grade levels
+      // Fetch teacher's subject_keys and derive grade levels from courses table
       const { data: teacher } = await supabase
         .from('teachers').select('subjects').eq('id', session.userId).maybeSingle()
 
       const subjects: string[] = teacher?.subjects ?? []
       const subjectSet = subjects.length ? new Set(subjects) : null
-      const gradeList = extractGrades(subjects)
+
+      // Look up course names/grades to extract grade level (ป.3, ม.1, etc.)
+      const { data: teacherCourses } = subjects.length
+        ? await supabase.from('courses').select('name, grade').in('subject_key', subjects)
+        : { data: [] }
+      const gradeList = [...new Set(
+        (teacherCourses ?? []).map(c => gradeFromCourse(c.grade, c.name)).filter(Boolean) as string[]
+      )]
       setGrades(gradeList)
 
       const [{ data: modules }, { data: pacings }, { data: assessments }, { data: students }] =
