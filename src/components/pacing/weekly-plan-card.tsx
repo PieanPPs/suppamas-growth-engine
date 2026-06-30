@@ -3,13 +3,14 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
-import { CurriculumModule, PacingLog, PacingStatus, PlanSubmission, HomeworkTask } from '@/lib/types'
+import { CurriculumModule, PacingLog, PacingStatus, PlanSubmission, HomeworkTask, LessonPlan } from '@/lib/types'
 import { weekOfLesson } from '@/lib/pacing'
 import { getSchoolId } from '@/lib/school'
 import {
   CheckCircle2, Clock, AlertTriangle, Loader2, Link2, Upload, FileText,
-  ExternalLink, Layers, ClipboardList, Star, ChevronRight, Sparkles, Save,
+  ExternalLink, Layers, ClipboardList, Star, ChevronRight, Sparkles, Save, BookPlus,
 } from 'lucide-react'
+import Link from 'next/link'
 
 const STATUS: Record<PacingStatus, { label: string; bg: string; ring: string; icon: React.ReactNode }> = {
   Completed:   { label: 'สอนจบ',    bg: 'bg-green-500',  ring: 'ring-green-300',  icon: <CheckCircle2 size={16} /> },
@@ -67,6 +68,8 @@ export function WeeklyPlanCard({
     routine_exit: plan?.routine_exit ?? '',
   })
   const [file, setFile] = useState<File | null>(null)
+  const [aiPlans, setAiPlans] = useState<Pick<LessonPlan, 'id' | 'topic' | 'status'>[]>([])
+  const [linkedPlanId, setLinkedPlanId] = useState<string | null>(initialPlan?.lesson_plan_id ?? null)
   const [showRoutine, setShowRoutine] = useState(
     !!(plan?.routine_hook || plan?.routine_core || plan?.routine_active || plan?.routine_exit)
   )
@@ -79,6 +82,7 @@ export function WeeklyPlanCard({
       setPlanName(initialPlan.plan_name ?? '')
       setSummary(initialPlan.summary_note ?? '')
       setLink(initialPlan.material_link ?? '')
+      setLinkedPlanId(initialPlan.lesson_plan_id ?? null)
       setRoutine({
         routine_hook: initialPlan.routine_hook ?? '',
         routine_core: initialPlan.routine_core ?? '',
@@ -87,6 +91,18 @@ export function WeeklyPlanCard({
       })
     }
   }, [initialPlan])
+
+  // load AI lesson plans for this module
+  useEffect(() => {
+    if (!teacherId) return
+    supabase
+      .from('lesson_plans')
+      .select('id, topic, status')
+      .eq('module_id', module.id)
+      .eq('teacher_id', teacherId)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setAiPlans((data ?? []) as Pick<LessonPlan, 'id' | 'topic' | 'status'>[]))
+  }, [teacherId, module.id])
 
   const [saving, setSaving] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
@@ -116,6 +132,7 @@ export function WeeklyPlanCard({
           summary_note: summary || null,
           material_link: link || null,
           file_path: filePath,
+          lesson_plan_id: linkedPlanId || null,
           ...routine,
         },
         { onConflict: 'teacher_id,module_id' }
@@ -259,10 +276,41 @@ export function WeeklyPlanCard({
           />
         </div>
 
+        {/* AI lesson plan picker */}
+        {aiPlans.length > 0 ? (
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-violet-600 flex items-center gap-1">
+              <BookPlus size={12} /> เชื่อมแผน AI
+            </label>
+            <select
+              value={linkedPlanId ?? ''}
+              onChange={e => setLinkedPlanId(e.target.value || null)}
+              className="w-full text-sm border border-violet-200 bg-violet-50 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-300"
+            >
+              <option value="">— ยังไม่ได้เชื่อมแผน AI —</option>
+              {aiPlans.map(p => (
+                <option key={p.id} value={p.id}>{p.topic}</option>
+              ))}
+            </select>
+            {linkedPlanId && (
+              <Link href={`/teacher/lesson-plans/${linkedPlanId}`}
+                className="text-xs text-violet-600 hover:underline flex items-center gap-0.5">
+                <ExternalLink size={11} /> เปิดแผน AI
+              </Link>
+            )}
+          </div>
+        ) : (
+          <Link href="/teacher/lesson-plans/generate"
+            className="flex items-center gap-2 text-xs text-violet-600 border border-dashed border-violet-200 rounded-xl px-3 py-2 hover:bg-violet-50 transition-colors">
+            <BookPlus size={13} className="flex-shrink-0" />
+            สร้างแผน AI สำหรับ module นี้
+          </Link>
+        )}
+
         {/* file */}
         <label className="flex items-center gap-2 text-sm text-gray-500 border border-dashed border-gray-300 rounded-xl px-3 py-2 cursor-pointer hover:border-blue-300 transition-colors">
           <Upload size={15} className="text-gray-400" />
-          <span className="truncate flex-1">{file ? file.name : 'แนบไฟล์แผน'}</span>
+          <span className="truncate flex-1">{file ? file.name : 'แนบไฟล์แผน (เพิ่มเติม)'}</span>
           {fileUrl && !file && (
             <a href={fileUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-blue-600 flex items-center gap-0.5 text-xs">
               <FileText size={12} /> ไฟล์เดิม

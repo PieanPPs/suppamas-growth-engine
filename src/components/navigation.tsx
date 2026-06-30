@@ -4,9 +4,11 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { BookOpen, ClipboardList, BarChart3, BookCheck, LogOut } from 'lucide-react'
+import { BookOpen, ClipboardList, BarChart3, BookCheck, LogOut, FileCheck } from 'lucide-react'
 import { getSession, clearSession } from '@/lib/auth'
 import type { Session } from '@/lib/auth'
+import { createClient } from '@/lib/supabase/client'
+import { getSchoolId } from '@/lib/school'
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{size?:number;className?:string}>; small: boolean; roles: string[] | null }
 
@@ -14,6 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/teacher/pacing',     label: 'แผนสอน',                              icon: BookOpen,      small: false, roles: null },
   { href: '/teacher/assessment', label: 'เช็คชื่อ/บันทึกพฤติกรรม/แบบทดสอบ', icon: ClipboardList, small: true,  roles: null },
   { href: '/teacher/homework',   label: 'ภาระงาน/ชิ้นงาน',                    icon: BookCheck,     small: true,  roles: null },
+  { href: '/admin/lesson-plans', label: 'ตรวจแผน',                             icon: FileCheck,     small: false, roles: ['admin', 'principal'] },
   { href: '/overview',           label: 'ภาพรวม',                              icon: BarChart3,     small: false, roles: null },
 ]
 
@@ -27,9 +30,18 @@ export function Navigation() {
   const pathname = usePathname()
   const router = useRouter()
   const [session, setSession] = useState<Session | null>(null)
+  const [pendingPlans, setPendingPlans] = useState(0)
 
   useEffect(() => {
-    setSession(getSession())
+    const s = getSession()
+    setSession(s)
+    if (s?.role === 'admin' || s?.role === 'principal') {
+      const supabase = createClient()
+      const schoolId = getSchoolId()
+      supabase.from('lesson_plans').select('id', { count: 'exact', head: true })
+        .eq('school_id', schoolId).eq('status', 'submitted')
+        .then(({ count }) => setPendingPlans(count ?? 0))
+    }
   }, [pathname]) // refresh ทุกครั้งที่เปลี่ยน path
 
   function logout() {
@@ -95,12 +107,20 @@ export function Navigation() {
                 (pathname.startsWith('/teacher/tests') || pathname.startsWith('/teacher/pp5'))) ||
               (href === '/overview' &&
                 (pathname.startsWith('/admin/dashboard') || pathname.startsWith('/teacher/overview')))
+            const badge = href === '/admin/lesson-plans' && pendingPlans > 0 ? pendingPlans : 0
             return (
               <Link key={href} href={href}
                 className={`flex-1 flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors ${
                   active ? 'text-blue-600 border-t-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'
                 }`}>
-                <Icon size={20} />
+                <div className="relative">
+                  <Icon size={20} />
+                  {badge > 0 && (
+                    <span className="absolute -top-1.5 -right-2 bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5">
+                      {badge}
+                    </span>
+                  )}
+                </div>
                 <span className={small ? 'text-[8px] leading-tight text-center' : ''}>{label}</span>
               </Link>
             )

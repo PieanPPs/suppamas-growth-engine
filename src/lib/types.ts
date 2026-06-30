@@ -153,6 +153,7 @@ export interface PlanSubmission {
   routine_active: string | null
   routine_exit: string | null
   file_path: string | null
+  lesson_plan_id: string | null
   created_at: string
 }
 
@@ -214,6 +215,8 @@ export interface Teacher {
   pin?: string | null
 }
 
+export type LessonPlanStatus = 'draft' | 'submitted' | 'approved' | 'revision'
+
 export interface LessonPlan {
   id: string
   school_id: string
@@ -237,6 +240,10 @@ export interface LessonPlan {
   materials: string | null
   post_lesson_note: string | null
   suggestion: string | null
+  status: LessonPlanStatus
+  submitted_at: string | null
+  reviewed_at: string | null
+  reviewer_note: string | null
   created_at: string
 }
 
