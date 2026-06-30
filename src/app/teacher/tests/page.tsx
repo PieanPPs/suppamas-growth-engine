@@ -59,6 +59,7 @@ export default function TestsPage() {
   // score entry
   const [activeTest, setActiveTest] = useState<Test | null>(null)
   const [scoreInputs, setScoreInputs] = useState<Record<string, string>>({})
+  const [expandedStudent, setExpandedStudent] = useState<string | null>(null)
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteText, setPasteText] = useState('')
   const [savedFlash, setSavedFlash] = useState(false)
@@ -316,29 +317,73 @@ export default function TestsPage() {
         <div className="space-y-1.5">
           {visibleStudents.map((s, i) => {
             const val = scoreInputs[s.id] ?? ''
-            const pct = val !== '' && !isNaN(Number(val)) ? Number(val) / activeTest.max_score : null
+            const score = val !== '' && !isNaN(Number(val)) ? Number(val) : null
+            const pct = score != null ? score / activeTest.max_score : null
+            const isExpanded = expandedStudent === s.id
+            const scoreButtons = Array.from({ length: activeTest.max_score + 1 }, (_, n) => n)
+
+            function pickScore(n: number) {
+              setScoreInputs(prev => ({ ...prev, [s.id]: String(n) }))
+              // auto-advance to next student
+              const nextStudent = visibleStudents[i + 1]
+              setExpandedStudent(nextStudent ? nextStudent.id : null)
+            }
+
             return (
-              <div key={s.id} className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2">
-                <span className="w-5 text-center text-xs text-gray-400">{i + 1}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-800 truncate">{s.name}</p>
-                  <p className="text-[10px] text-gray-400">{s.class_name}{s.student_number ? ` · เลขที่ ${s.student_number}` : ''}</p>
-                </div>
-                {pct != null && (
-                  <span className={`text-[10px] font-bold ${pct >= 0.5 ? 'text-green-600' : 'text-red-500'}`}>
-                    {Math.round(pct * 100)}%
-                  </span>
+              <div key={s.id} className={`bg-white border rounded-2xl overflow-hidden transition-all ${isExpanded ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-200'}`}>
+                {/* row header — tap to expand */}
+                <button
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
+                  onClick={() => setExpandedStudent(isExpanded ? null : s.id)}
+                >
+                  <span className="w-5 text-center text-xs text-gray-400 flex-shrink-0">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800 truncate">{s.name}</p>
+                    <p className="text-[10px] text-gray-400">{s.class_name}{s.student_number ? ` · เลขที่ ${s.student_number}` : ''}</p>
+                  </div>
+                  {score != null ? (
+                    <span className={`text-sm font-bold px-2.5 py-1 rounded-lg ${pct! >= 0.5 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                      {score}<span className="text-[10px] font-normal text-gray-400 ml-0.5">/{activeTest.max_score}</span>
+                    </span>
+                  ) : (
+                    <span className="text-sm text-gray-300 font-medium px-2.5 py-1 border border-dashed border-gray-200 rounded-lg">—</span>
+                  )}
+                </button>
+
+                {/* expanded: score button grid */}
+                {isExpanded && (
+                  <div className="px-3 pb-3 border-t border-blue-100">
+                    <div className="grid grid-cols-6 gap-1.5 mt-2.5">
+                      {scoreButtons.map(n => (
+                        <button
+                          key={n}
+                          onClick={() => pickScore(n)}
+                          className={`py-2 rounded-xl text-sm font-bold transition-all active:scale-95 ${
+                            score === n
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'bg-gray-100 text-gray-700 hover:bg-blue-50 hover:text-blue-700'
+                          }`}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                    {/* manual input fallback */}
+                    <div className="flex items-center gap-2 mt-2.5">
+                      <span className="text-xs text-gray-400">หรือพิมพ์:</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        max={activeTest.max_score}
+                        value={val}
+                        onChange={e => setScoreInputs(prev => ({ ...prev, [s.id]: e.target.value }))}
+                        placeholder="—"
+                        className="w-20 text-center text-sm font-semibold border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                      />
+                    </div>
+                  </div>
                 )}
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  max={activeTest.max_score}
-                  value={val}
-                  onChange={e => setScoreInputs(prev => ({ ...prev, [s.id]: e.target.value }))}
-                  placeholder="—"
-                  className="w-20 text-center text-sm font-semibold border border-gray-200 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                />
               </div>
             )
           })}
