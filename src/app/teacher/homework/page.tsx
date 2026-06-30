@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -40,6 +40,7 @@ export default function HomeworkPage() {
   const [taskTitle, setTaskTitle] = useState('')
   const [view, setView] = useState<'summary' | 'entry'>('summary')
   const [markingAll, setMarkingAll] = useState(false)
+  const [selectedSubject, setSelectedSubject] = useState('')
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   useEffect(() => {
@@ -59,9 +60,7 @@ export default function HomeworkPage() {
       const teacherId = typeof window !== 'undefined' ? localStorage.getItem(TEACHER_KEY) : null
       if (teacherId) {
         const { data: links } = await supabase
-          .from('teacher_classrooms')
-          .select('classrooms(name)')
-          .eq('teacher_id', teacherId)
+          .from('teacher_classrooms').select('classrooms(name)').eq('teacher_id', teacherId)
         const names = (links ?? [])
           .map((r: { classrooms: { name: string } | { name: string }[] | null }) =>
             Array.isArray(r.classrooms) ? r.classrooms[0]?.name : r.classrooms?.name)
@@ -73,12 +72,29 @@ export default function HomeworkPage() {
     load()
   }, [])
 
-  // subs derived from allSubs for selected module
-  const subs = new Map(
-    allSubs.filter(s => s.module_id === selectedModule).map(s => [s.student_id, s.status])
+  // O(1) lookup: "studentId:moduleId" → status
+  const subsLookup = useMemo(() =>
+    new Map(allSubs.map(s => [`${s.student_id}:${s.module_id}`, s.status])),
+    [allSubs]
   )
 
-  // sync task title when module changes
+  // subs for current module (entry view)
+  const subs = useMemo(() =>
+    new Map(allSubs.filter(s => s.module_id === selectedModule).map(s => [s.student_id, s.status])),
+    [allSubs, selectedModule]
+  )
+
+  // unique subjects
+  const subjects = useMemo(() =>
+    Array.from(new Set(modules.map(m => m.subject).filter(Boolean))).sort(),
+    [modules]
+  )
+
+  // modules filtered by subject
+  const filteredModules = selectedSubject
+    ? modules.filter(m => m.subject === selectedSubject)
+    : modules
+
   useEffect(() => {
     setTaskTitle(tasks.get(selectedModule)?.title ?? '')
     setEditTask(false)
@@ -137,7 +153,13 @@ export default function HomeworkPage() {
   const boundStudents = boundRooms.length > 0
     ? students.filter(s => boundRooms.includes(s.class_name))
     : students
+
   const visibleStudents = selectedRoom
+    ? boundStudents.filter(s => s.class_name === selectedRoom)
+    : boundStudents
+
+  // matrix students: filtered by selected room (or all bound)
+  const matrixStudents = selectedRoom
     ? boundStudents.filter(s => s.class_name === selectedRoom)
     : boundStudents
 
@@ -153,10 +175,10 @@ export default function HomeworkPage() {
     }
   }
 
-  // summary per module (filtered to bound students only)
-  const summaryRows = modules.map(mod => {
-    const modSubs = allSubs.filter(s => s.module_id === mod.id && boundStudents.some(b => b.id === s.student_id))
-    const total = boundStudents.length
+  // summary cards per filtered module
+  const summaryRows = filteredModules.map(mod => {
+    const modSubs = allSubs.filter(s => s.module_id === mod.id && matrixStudents.some(b => b.id === s.student_id))
+    const total = matrixStudents.length
     const onTime = modSubs.filter(s => s.status === 'On_Time').length
     const late = modSubs.filter(s => s.status === 'Late').length
     const missing = modSubs.filter(s => s.status === 'Missing').length
@@ -179,7 +201,7 @@ export default function HomeworkPage() {
       <div className="flex items-start justify-between gap-2">
         <div>
           <h2 className="text-xl font-bold text-gray-900">การบ้าน</h2>
-          <p className="text-sm text-gray-500 mt-1">สรุปภาพรวม · เช็กส่งงานรายคน</p>
+          <p className="text-sm text-gray-500 mt-1">สรุปภาพรวม · ตารางรายนักเรียน · เช็กส่งงาน</p>
         </div>
         <motion.button whileTap={{ scale: 0.95 }} onClick={() => setScanning(true)}
           className="flex-shrink-0 inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-2.5 rounded-xl">
@@ -189,33 +211,127 @@ export default function HomeworkPage() {
 
       {/* View tabs */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
-        <button
-          onClick={() => setView('summary')}
-          className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold py-2 rounded-lg transition-all ${view === 'summary' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
-        >
+        <button onClick={() => setView('summary')}
+          className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold py-2 rounded-lg transition-all ${view === 'summary' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
           <BarChart3 size={14} /> ภาพรวมทั้งหมด
         </button>
-        <button
-          onClick={() => setView('entry')}
-          className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold py-2 rounded-lg transition-all ${view === 'entry' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
-        >
+        <button onClick={() => setView('entry')}
+          className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold py-2 rounded-lg transition-all ${view === 'entry' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
           <CheckCheck size={14} /> เช็คส่งงาน
         </button>
       </div>
 
       {/* ======= SUMMARY VIEW ======= */}
       {view === 'summary' && (
-        <div className="space-y-3">
-          <p className="text-xs text-gray-400">แสดงทุกวิชา · คลิกแถวเพื่อเช็คส่งงาน</p>
+        <div className="space-y-4">
+
+          {/* Room filter */}
+          <RoomFilter rooms={roomOptions} value={selectedRoom} onChange={selectRoom} />
+
+          {/* Subject filter pills */}
+          {subjects.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+              <button
+                onClick={() => setSelectedSubject('')}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold flex-shrink-0 transition-colors ${!selectedSubject ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                ทั้งหมด
+              </button>
+              {subjects.map(s => (
+                <button key={s}
+                  onClick={() => setSelectedSubject(s)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold flex-shrink-0 transition-colors ${selectedSubject === s ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* ── Matrix table ── */}
+          {filteredModules.length > 0 && matrixStudents.length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-700">ตารางรายนักเรียน</p>
+                <div className="flex items-center gap-3 text-[10px] text-gray-400">
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" /> ตรงเวลา</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> ช้า</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" /> ไม่ส่ง</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-gray-200 inline-block" /> ยังไม่เช็ก</span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="text-xs border-collapse" style={{ minWidth: `${140 + filteredModules.length * 52}px` }}>
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="sticky left-0 z-10 bg-gray-50 border-b border-gray-200 text-left px-3 py-2 font-semibold text-gray-600 w-36">
+                        นักเรียน
+                      </th>
+                      {filteredModules.map(mod => (
+                        <th key={mod.id} className="border-b border-gray-200 px-1 py-2 text-center font-medium text-gray-500 w-12">
+                          <div className="text-[10px] font-semibold text-gray-700 leading-tight">{mod.module_code}</div>
+                          <div className="text-[9px] text-gray-400 truncate max-w-[44px] mx-auto leading-tight mt-0.5">
+                            {tasks.get(mod.id)?.title?.slice(0, 6) ?? ''}
+                          </div>
+                        </th>
+                      ))}
+                      <th className="border-b border-gray-200 px-2 py-2 text-center font-medium text-gray-500 w-12">
+                        <div className="text-[10px] font-semibold text-gray-700">รวม</div>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matrixStudents.map((student, idx) => {
+                      const submitted = filteredModules.filter(mod => {
+                        const st = subsLookup.get(`${student.id}:${mod.id}`)
+                        return st === 'On_Time' || st === 'Late'
+                      }).length
+                      const total = filteredModules.length
+                      return (
+                        <tr key={student.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}>
+                          <td className={`sticky left-0 z-10 border-b border-gray-100 px-3 py-2 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}`}>
+                            <p className="font-medium text-gray-800 truncate max-w-[120px]">{student.name}</p>
+                            <p className="text-[10px] text-gray-400">{student.class_name}</p>
+                          </td>
+                          {filteredModules.map(mod => {
+                            const status = subsLookup.get(`${student.id}:${mod.id}`)
+                            return (
+                              <td key={mod.id} className="border-b border-gray-100 text-center px-1 py-2">
+                                <button
+                                  onClick={() => { setSelectedModule(mod.id); setView('entry') }}
+                                  title={status === 'On_Time' ? 'ตรงเวลา' : status === 'Late' ? 'ส่งช้า' : status === 'Missing' ? 'ไม่ส่ง' : 'ยังไม่เช็ก'}
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded-full transition-transform hover:scale-110"
+                                >
+                                  {status === 'On_Time' && <span className="w-4 h-4 rounded-full bg-green-500 inline-block" />}
+                                  {status === 'Late'    && <span className="w-4 h-4 rounded-full bg-yellow-400 inline-block" />}
+                                  {status === 'Missing' && <span className="w-4 h-4 rounded-full bg-red-400 inline-block" />}
+                                  {!status              && <span className="w-4 h-4 rounded-full bg-gray-200 inline-block" />}
+                                </button>
+                              </td>
+                            )
+                          })}
+                          <td className="border-b border-gray-100 text-center px-2 py-2">
+                            <span className={`text-[11px] font-bold ${submitted === total ? 'text-green-600' : submitted >= total * 0.8 ? 'text-yellow-600' : 'text-red-500'}`}>
+                              {submitted}/{total}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── Summary cards per module ── */}
+          <p className="text-xs font-semibold text-gray-500 mt-2">สรุปรายภาระงาน</p>
           {summaryRows.map(({ mod, task, onTime, late, missing, total, pct }) => {
             const barColor = pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-yellow-400' : 'bg-red-400'
             const pctColor = pct >= 80 ? 'text-green-700' : pct >= 50 ? 'text-yellow-600' : 'text-red-600'
             return (
-              <button
-                key={mod.id}
+              <button key={mod.id}
                 onClick={() => { setSelectedModule(mod.id); setView('entry') }}
-                className="w-full text-left bg-white border border-gray-200 rounded-2xl px-4 py-3 hover:border-blue-300 hover:bg-blue-50/40 transition-all"
-              >
+                className="w-full text-left bg-white border border-gray-200 rounded-2xl px-4 py-3 hover:border-blue-300 hover:bg-blue-50/40 transition-all">
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-gray-500">{mod.module_code}</p>
@@ -223,23 +339,13 @@ export default function HomeworkPage() {
                   </div>
                   <span className={`text-sm font-bold flex-shrink-0 ${pctColor}`}>{pct}%</span>
                 </div>
-
-                {/* progress bar */}
                 <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-2">
                   <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
                 </div>
-
-                {/* counts */}
-                <div className="flex gap-2 text-[11px]">
-                  <span className="flex items-center gap-0.5 text-green-700 font-semibold">
-                    <CheckCircle2 size={11} /> ตรงเวลา {onTime}
-                  </span>
-                  <span className="flex items-center gap-0.5 text-yellow-600 font-semibold">
-                    <Clock size={11} /> ช้า {late}
-                  </span>
-                  <span className="flex items-center gap-0.5 text-red-500 font-semibold">
-                    <XCircle size={11} /> ไม่ส่ง {missing}
-                  </span>
+                <div className="flex gap-3 text-[11px]">
+                  <span className="flex items-center gap-0.5 text-green-700 font-semibold"><CheckCircle2 size={11} /> {onTime}</span>
+                  <span className="flex items-center gap-0.5 text-yellow-600 font-semibold"><Clock size={11} /> {late}</span>
+                  <span className="flex items-center gap-0.5 text-red-500 font-semibold"><XCircle size={11} /> {missing}</span>
                   <span className="ml-auto text-gray-400">จาก {total} คน</span>
                 </div>
               </button>
@@ -260,7 +366,7 @@ export default function HomeworkPage() {
             <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           </div>
 
-          {/* Task / Quest */}
+          {/* Task */}
           <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-amber-700 flex items-center gap-1">
@@ -288,8 +394,8 @@ export default function HomeworkPage() {
           {/* Room filter */}
           <RoomFilter rooms={roomOptions} value={selectedRoom} onChange={selectRoom} />
 
-          {/* Progress + bulk button */}
-          <div className="flex items-center justify-between gap-3">
+          {/* Progress + bulk */}
+          <div className="flex items-center gap-3">
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
                 <span>เช็กแล้ว {doneCount}/{visibleStudents.length} คน</span>
@@ -300,12 +406,8 @@ export default function HomeworkPage() {
                   animate={{ width: `${(doneCount / Math.max(1, visibleStudents.length)) * 100}%` }} />
               </div>
             </div>
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={markAllOnTime}
-              disabled={markingAll}
-              className="flex-shrink-0 inline-flex items-center gap-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2.5 rounded-xl"
-            >
+            <motion.button whileTap={{ scale: 0.95 }} onClick={markAllOnTime} disabled={markingAll}
+              className="flex-shrink-0 inline-flex items-center gap-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2.5 rounded-xl">
               {markingAll ? <Loader2 size={14} className="animate-spin" /> : <CheckCheck size={14} />}
               ส่งทั้งหมด
             </motion.button>
@@ -317,13 +419,8 @@ export default function HomeworkPage() {
               const current = subs.get(student.id)
               const highlighted = highlightId === student.id
               return (
-                <div
-                  key={student.id}
-                  ref={el => { rowRefs.current[student.id] = el }}
-                  className={`rounded-2xl border px-4 py-3 transition-all ${
-                    highlighted ? 'border-indigo-400 ring-2 ring-indigo-200 bg-indigo-50' : 'border-gray-200 bg-white'
-                  }`}
-                >
+                <div key={student.id} ref={el => { rowRefs.current[student.id] = el }}
+                  className={`rounded-2xl border px-4 py-3 transition-all ${highlighted ? 'border-indigo-400 ring-2 ring-indigo-200 bg-indigo-50' : 'border-gray-200 bg-white'}`}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-gray-800">{student.name}</p>
@@ -331,14 +428,8 @@ export default function HomeworkPage() {
                     </div>
                     <div className="flex gap-1.5 flex-shrink-0">
                       {(Object.entries(STATUS) as [HomeworkStatus, typeof STATUS[HomeworkStatus]][]).map(([s, cfg]) => (
-                        <motion.button
-                          key={s}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => setStatus(student.id, s)}
-                          className={`px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors ${
-                            current === s ? cfg.on : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
-                          }`}
-                        >
+                        <motion.button key={s} whileTap={{ scale: 0.9 }} onClick={() => setStatus(student.id, s)}
+                          className={`px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors ${current === s ? cfg.on : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
                           {cfg.icon}
                           <span className="hidden sm:inline">{cfg.label}</span>
                         </motion.button>
