@@ -13,6 +13,7 @@ import {
 import { QrScanner } from '@/components/qr-scanner'
 import { RoomFilter, readStoredRoom, storeRoom } from '@/components/room-filter'
 import { getSchoolId } from '@/lib/school'
+import { getSession } from '@/lib/auth'
 
 const STATUS: Record<HomeworkStatus, { label: string; on: string; icon: React.ReactNode }> = {
   On_Time: { label: 'ตรงเวลา', on: 'bg-green-500 text-white', icon: <CheckCircle2 size={16} /> },
@@ -51,13 +52,25 @@ export default function HomeworkPage() {
         supabase.from('homework_tasks').select('*').eq('school_id', schoolId),
         supabase.from('homework_submissions').select('*').eq('school_id', schoolId),
       ])
-      setStudents(st ?? [])
-      setModules(mods ?? [])
-      setTasks(new Map((tk ?? []).map((t: HomeworkTask) => [t.module_id, t])))
-      setAllSubs(subsData ?? [])
-      if (mods?.[0]) setSelectedModule(mods[0].id)
 
       const teacherId = typeof window !== 'undefined' ? localStorage.getItem(TEACHER_KEY) : null
+
+      let visibleMods = (mods ?? []) as CurriculumModule[]
+      if (teacherId) {
+        const { data: teacher } = await supabase
+          .from('teachers').select('subjects').eq('id', teacherId).maybeSingle()
+        const assignedSubjects = new Set<string>(teacher?.subjects ?? [])
+        if (assignedSubjects.size > 0) {
+          visibleMods = visibleMods.filter(m => assignedSubjects.has(m.subject))
+        }
+      }
+
+      setStudents(st ?? [])
+      setModules(visibleMods)
+      setTasks(new Map((tk ?? []).map((t: HomeworkTask) => [t.module_id, t])))
+      setAllSubs(subsData ?? [])
+      if (visibleMods[0]) setSelectedModule(visibleMods[0].id)
+
       if (teacherId) {
         const { data: links } = await supabase
           .from('teacher_classrooms').select('classrooms(name)').eq('teacher_id', teacherId)
