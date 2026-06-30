@@ -18,6 +18,7 @@ import { WeeklyPlanCard } from '@/components/pacing/weekly-plan-card'
 import Link from 'next/link'
 import { Loader2, UserCircle2, ChevronDown, CalendarX2, BookPlus } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
+import { getSession } from '@/lib/auth'
 
 const TEACHER_KEY = 'sge_teacher_id'
 
@@ -26,6 +27,7 @@ export default function PacingPage() {
   const schoolId = getSchoolId()
   const router = useRouter()
   const [loading, setLoading] = useState(true)
+  const [isTeacherRole, setIsTeacherRole] = useState(false)
   const [settings, setSettings] = useState<AcademicSettings | null>(null)
   const [modules, setModules] = useState<CurriculumModule[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
@@ -72,8 +74,16 @@ export default function PacingPage() {
       const week = currentAcademicWeek(settingsRow.term_start_date)
       setSelectedWeek(Math.min(settingsRow.total_weeks, Math.max(1, week || 1)))
 
-      const stored = typeof window !== 'undefined' ? localStorage.getItem(TEACHER_KEY) : null
-      if (stored) setTeacherId(stored)
+      const session = getSession()
+      const isTeacher = session?.role === 'teacher'
+      setIsTeacherRole(isTeacher)
+      if (isTeacher && session?.userId) {
+        // lock to own ID — cannot switch to other teachers
+        setTeacherId(session.userId)
+      } else {
+        const stored = typeof window !== 'undefined' ? localStorage.getItem(TEACHER_KEY) : null
+        if (stored) setTeacherId(stored)
+      }
       setLoading(false)
     }
     load()
@@ -137,19 +147,21 @@ export default function PacingPage() {
     <div className="space-y-5 pb-8">
       <TermBanner settings={settings} onUpdate={setSettings} />
 
-      {/* Teacher picker */}
-      <div className="relative">
-        <UserCircle2 size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
-        <select
-          value={teacherId ?? ''}
-          onChange={e => selectTeacher(e.target.value)}
-          className="w-full appearance-none bg-white border border-gray-200 rounded-2xl pl-10 pr-10 py-3 text-sm font-medium text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-        >
-          <option value="">แสดงทุกวิชา (ทั้งหมด)</option>
-          {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
-        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-      </div>
+      {/* Teacher picker — admin/principal only */}
+      {!isTeacherRole && (
+        <div className="relative">
+          <UserCircle2 size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
+          <select
+            value={teacherId ?? ''}
+            onChange={e => selectTeacher(e.target.value)}
+            className="w-full appearance-none bg-white border border-gray-200 rounded-2xl pl-10 pr-10 py-3 text-sm font-medium text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+          >
+            <option value="">แสดงทุกวิชา (ทั้งหมด)</option>
+            {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        </div>
+      )}
 
       {/* Overall pacing traffic lights */}
       <AnimatePresence>
