@@ -2,12 +2,19 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { LessonPlan, CurriculumModule } from '@/lib/types'
+import { LessonPlan, LessonPlanStatus, CurriculumModule } from '@/lib/types'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
-import { Loader2, Plus, BookPlus, ChevronRight, CalendarDays, BookOpen } from 'lucide-react'
+import { Loader2, Plus, BookPlus, ChevronRight, CalendarDays, BookOpen, Trash2 } from 'lucide-react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
+
+const STATUS_DOT: Record<LessonPlanStatus, { dot: string; label: string }> = {
+  draft:     { dot: 'bg-gray-400',   label: 'ฉบับร่าง' },
+  submitted: { dot: 'bg-blue-500',   label: 'รอตรวจ' },
+  approved:  { dot: 'bg-green-500',  label: 'อนุมัติ' },
+  revision:  { dot: 'bg-red-500',    label: 'ขอแก้ไข' },
+}
 
 export default function LessonPlansPage() {
   const supabase = createClient()
@@ -16,6 +23,8 @@ export default function LessonPlansPage() {
   const [plans, setPlans] = useState<LessonPlan[]>([])
   const [modules, setModules] = useState<Map<string, CurriculumModule>>(new Map())
   const [loading, setLoading] = useState(true)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -33,6 +42,14 @@ export default function LessonPlansPage() {
     }
     load()
   }, [])
+
+  async function deletePlan(id: string) {
+    setDeleting(true)
+    await supabase.from('lesson_plans').delete().eq('id', id)
+    setPlans(ps => ps.filter(p => p.id !== id))
+    setConfirmDelete(null)
+    setDeleting(false)
+  }
 
   if (loading) return (
     <div className="flex items-center justify-center py-24">
@@ -61,48 +78,98 @@ export default function LessonPlansPage() {
           <p className="text-sm text-gray-400">ยังไม่มีแผนการสอน</p>
           <Link href="/teacher/lesson-plans/generate"
             className="inline-flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl">
-            <Plus size={14} /> สร้างแผนแรกด้วย AI
+            <Plus size={14} /> สร้างแผนแรก
           </Link>
         </div>
       ) : (
         <div className="space-y-2">
-          {plans.map((plan, i) => {
-            const mod = plan.module_id ? modules.get(plan.module_id) : null
-            return (
-              <motion.div key={plan.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                <Link href={`/teacher/lesson-plans/${plan.id}`}
-                  className="block bg-white border border-gray-200 rounded-2xl px-4 py-3 hover:border-violet-300 transition-colors">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] bg-violet-50 text-violet-700 px-1.5 py-0.5 rounded font-semibold">
-                          แผนที่ {plan.plan_number}
-                        </span>
-                        {plan.subject && (
-                          <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-medium">
-                            {plan.subject}
+          <AnimatePresence>
+            {plans.map((plan, i) => {
+              const mod = plan.module_id ? modules.get(plan.module_id) : null
+              const status = (plan.status ?? 'draft') as LessonPlanStatus
+              const statusCfg = STATUS_DOT[status]
+              const isConfirming = confirmDelete === plan.id
+
+              return (
+                <motion.div
+                  key={plan.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, x: -20, height: 0, marginBottom: 0 }}
+                  transition={{ delay: i * 0.03 }}
+                >
+                  <div className="bg-white border border-gray-200 rounded-2xl px-4 py-3 hover:border-violet-200 transition-colors">
+                    <div className="flex items-start gap-2">
+                      {/* Main content — clickable */}
+                      <Link href={`/teacher/lesson-plans/${plan.id}`} className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] bg-violet-50 text-violet-700 px-1.5 py-0.5 rounded font-semibold">
+                            แผนที่ {plan.plan_number}
                           </span>
+                          {plan.subject && (
+                            <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-medium">
+                              {plan.subject}
+                            </span>
+                          )}
+                          <span className={`text-[10px] font-semibold flex items-center gap-1 px-1.5 py-0.5 rounded-full ${
+                            status === 'approved' ? 'bg-green-50 text-green-700' :
+                            status === 'submitted' ? 'bg-blue-50 text-blue-700' :
+                            status === 'revision' ? 'bg-red-50 text-red-700' :
+                            'bg-gray-50 text-gray-500'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dot}`} />
+                            {statusCfg.label}
+                          </span>
+                        </div>
+                        <p className="text-sm font-semibold text-gray-800 mt-1">{plan.topic}</p>
+                        {mod && (
+                          <p className="text-xs text-gray-400 mt-0.5">{mod.title}</p>
+                        )}
+                        {plan.teach_date ? (
+                          <p className="text-xs text-teal-600 flex items-center gap-1 mt-1">
+                            <CalendarDays size={10} /> {plan.teach_date}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-amber-500 mt-1">ยังไม่ได้ระบุวันที่สอน</p>
+                        )}
+                      </Link>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
+                        {!isConfirming ? (
+                          <>
+                            <Link href={`/teacher/lesson-plans/${plan.id}`}
+                              className="p-1.5 rounded-lg text-gray-300 hover:text-gray-500">
+                              <ChevronRight size={16} />
+                            </Link>
+                            <button
+                              onClick={() => setConfirmDelete(plan.id)}
+                              className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors">
+                              <Trash2 size={15} />
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => deletePlan(plan.id)}
+                              disabled={deleting}
+                              className="text-xs font-semibold bg-red-500 hover:bg-red-600 text-white px-2.5 py-1.5 rounded-lg disabled:opacity-50">
+                              {deleting ? <Loader2 size={11} className="animate-spin" /> : 'ลบ'}
+                            </button>
+                            <button
+                              onClick={() => setConfirmDelete(null)}
+                              className="text-xs font-semibold text-gray-500 px-2 py-1.5 hover:text-gray-700">
+                              ยกเลิก
+                            </button>
+                          </div>
                         )}
                       </div>
-                      <p className="text-sm font-semibold text-gray-800 mt-1">{plan.topic}</p>
-                      {mod && (
-                        <p className="text-xs text-gray-400 mt-0.5">{mod.module_code} — {mod.title}</p>
-                      )}
-                      {plan.teach_date && (
-                        <p className="text-xs text-teal-600 flex items-center gap-1 mt-1">
-                          <CalendarDays size={10} /> {plan.teach_date}
-                        </p>
-                      )}
-                      {!plan.teach_date && (
-                        <p className="text-xs text-amber-500 mt-1">ยังไม่ได้ระบุวันที่สอน</p>
-                      )}
                     </div>
-                    <ChevronRight size={16} className="text-gray-300 flex-shrink-0 mt-1" />
                   </div>
-                </Link>
-              </motion.div>
-            )
-          })}
+                </motion.div>
+              )
+            })}
+          </AnimatePresence>
         </div>
       )}
     </div>

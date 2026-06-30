@@ -276,18 +276,25 @@ export function WeeklyPlanCard({
           />
         </div>
 
-        {/* AI lesson plan picker */}
+        {/* lesson plan picker */}
         {aiPlans.length > 0 ? (
           <div className="space-y-1">
             <label className="text-xs font-semibold text-violet-600 flex items-center gap-1">
-              <BookPlus size={12} /> เชื่อมแผน AI
+              <BookPlus size={12} /> เชื่อมแผน
             </label>
             <select
               value={linkedPlanId ?? ''}
-              onChange={e => setLinkedPlanId(e.target.value || null)}
+              onChange={e => {
+                const val = e.target.value || null
+                setLinkedPlanId(val)
+                if (val) {
+                  const found = aiPlans.find(p => p.id === val)
+                  if (found) setPlanName(found.topic)
+                }
+              }}
               className="w-full text-sm border border-violet-200 bg-violet-50 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-300"
             >
-              <option value="">— ยังไม่ได้เชื่อมแผน AI —</option>
+              <option value="">— ยังไม่ได้เชื่อมแผน —</option>
               {aiPlans.map(p => (
                 <option key={p.id} value={p.id}>{p.topic}</option>
               ))}
@@ -295,7 +302,7 @@ export function WeeklyPlanCard({
             {linkedPlanId && (
               <Link href={`/teacher/lesson-plans/${linkedPlanId}`}
                 className="text-xs text-violet-600 hover:underline flex items-center gap-0.5">
-                <ExternalLink size={11} /> เปิดแผน AI
+                <ExternalLink size={11} /> เปิดแผน
               </Link>
             )}
           </div>
@@ -303,7 +310,7 @@ export function WeeklyPlanCard({
           <Link href="/teacher/lesson-plans/generate"
             className="flex items-center gap-2 text-xs text-violet-600 border border-dashed border-violet-200 rounded-xl px-3 py-2 hover:bg-violet-50 transition-colors">
             <BookPlus size={13} className="flex-shrink-0" />
-            สร้างแผน AI สำหรับ module นี้
+            สร้างแผนสำหรับ module นี้
           </Link>
         )}
 
