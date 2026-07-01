@@ -100,11 +100,28 @@ export function weekOfLesson(m: CurriculumModule, currentWeek: number): number |
   return currentWeek - m.planned_week + 1
 }
 
+/** Latest status per module, considering only module-level logs (no lesson_plan_id) --
+ * once a module has lesson plans, each one tracks its own status via
+ * latestPacingByLessonPlan instead, so a log scoped to one lesson plan must not bleed
+ * into "the whole module's" status here. */
 export function latestPacingByModule(logs: PacingLog[]): Map<string, PacingLog> {
   const map = new Map<string, PacingLog>()
   for (const log of logs) {
+    if (log.lesson_plan_id) continue
     const existing = map.get(log.module_id)
     if (!existing || log.created_at > existing.created_at) map.set(log.module_id, log)
+  }
+  return map
+}
+
+/** Latest status per lesson plan -- lets each hour/topic within a module be marked
+ * "สอนจบ" independently instead of all sharing one module-wide status. */
+export function latestPacingByLessonPlan(logs: PacingLog[]): Map<string, PacingLog> {
+  const map = new Map<string, PacingLog>()
+  for (const log of logs) {
+    if (!log.lesson_plan_id) continue
+    const existing = map.get(log.lesson_plan_id)
+    if (!existing || log.created_at > existing.created_at) map.set(log.lesson_plan_id, log)
   }
   return map
 }

@@ -41,8 +41,15 @@ function buildPrompt(opts: {
   indicators: Indicator[]
   duration: string
 }) {
+  // split by type so the AI doesn't have to guess which selected indicator goes under
+  // ===ตัวชี้วัดระหว่างทาง=== vs ===ตัวชี้วัดปลายทาง=== -- the teacher already told us via the tabs
+  const interim = opts.indicators.filter(i => i.type === 'interim')
+  const final = opts.indicators.filter(i => i.type === 'final')
+  const fmt = (list: Indicator[]) => list.length
+    ? list.map(i => `  - ${i.code}: ${i.description}`).join('\n')
+    : '  - (ไม่ได้เลือก)'
   const indList = opts.indicators.length
-    ? opts.indicators.map(i => `  - ${i.code}: ${i.description}`).join('\n')
+    ? `ตัวชี้วัดระหว่างทาง (ที่ครูเลือก):\n${fmt(interim)}\nตัวชี้วัดปลายทาง (ที่ครูเลือก):\n${fmt(final)}`
     : '  - (ครูระบุตัวชี้วัดเอง)'
 
   return `คุณคือผู้เชี่ยวชาญด้านการออกแบบการเรียนรู้เชิงรุก (Active Learning) สำหรับโรงเรียนในประเทศไทย
@@ -62,9 +69,9 @@ ${indList}
 ตอบตามรูปแบบนี้ทุกหัวข้อ โดยใช้ ===หัวข้อ=== เป็นตัวแบ่งเท่านั้น:
 
 ===ตัวชี้วัดระหว่างทาง===
-[รหัสและคำอธิบายตัวชี้วัดระหว่างทาง]
+[คัดลอกรายการ "ตัวชี้วัดระหว่างทาง (ที่ครูเลือก)" ด้านบนมาทั้งหมด ห้ามเปลี่ยนแปลงหรือคัดออก]
 ===ตัวชี้วัดปลายทาง===
-[รหัสและคำอธิบายตัวชี้วัดปลายทาง]
+[คัดลอกรายการ "ตัวชี้วัดปลายทาง (ที่ครูเลือก)" ด้านบนมาทั้งหมด ห้ามเปลี่ยนแปลงหรือคัดออก]
 ===จุดประสงค์-K===
 นักเรียน[ระบุสิ่งที่นักเรียนจะรู้/เข้าใจ] (K)
 ===จุดประสงค์-P===

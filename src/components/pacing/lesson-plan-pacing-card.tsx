@@ -64,7 +64,7 @@ export function LessonPlanPacingCard({
     } else {
       const { data, error } = await supabase
         .from('pacing_logs')
-        .insert({ school_id: schoolId, teacher_id: teacherId, module_id: module.id, status })
+        .insert({ school_id: schoolId, teacher_id: teacherId, module_id: module.id, lesson_plan_id: lessonPlan.id, status })
         .select()
         .single()
       setSavingStatus(false)

@@ -78,7 +78,7 @@ export default function TestsPage() {
       supabase.from('tests').select('*').eq('school_id', schoolId).order('test_date', { ascending: false }),
       supabase.from('test_indicators').select('*'),
       fetchAllPaged<TestScore>(() => supabase.from('test_scores').select('*').eq('school_id', schoolId).order('id')),
-      fetchAllPaged<TestItem>(() => supabase.from('test_items').select('*').order('id')),
+      fetchAllPaged<TestItem>(() => supabase.from('test_items').select('*').order('test_id').order('item_no')),
       fetchAllPaged<TestItemResponse>(() => supabase.from('test_item_responses').select('*').eq('school_id', schoolId).order('id')),
     ])
     setTeachers(ts ?? []); setCourses(crs ?? []); setIndicators(inds ?? [])
@@ -242,7 +242,7 @@ export default function TestsPage() {
 
   const courseName = (key: string) => courses.find(c => c.subject_key === key)?.name ?? key
   const scoresOf = (testId: string) => allScores.filter(s => s.test_id === testId)
-  const itemsOf = (testId: string) => testItems.filter(i => i.test_id === testId)
+  const itemsOf = (testId: string) => testItems.filter(i => i.test_id === testId).sort((a, b) => a.item_no - b.item_no)
   const indicatorCodes = (testId: string) =>
     Array.from(new Set(
       testIndicators.filter(ti => ti.test_id === testId)

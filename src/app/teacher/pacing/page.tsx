@@ -9,7 +9,7 @@ import {
   HomeworkTask, StudentAssessment, LessonPlan, Student,
 } from '@/lib/types'
 import {
-  currentAcademicWeek, computeSubjectPacing, weekOfLesson, latestPacingByModule,
+  currentAcademicWeek, computeSubjectPacing, weekOfLesson, latestPacingByModule, latestPacingByLessonPlan,
 } from '@/lib/pacing'
 import { TermBanner } from '@/components/pacing/term-banner'
 import { SubjectStatus } from '@/components/pacing/subject-status'
@@ -36,6 +36,7 @@ export default function PacingPage() {
   const [teacherId, setTeacherId] = useState<string | null>(null)
   const [plans, setPlans] = useState<Map<string, PlanSubmission>>(new Map())
   const [pacings, setPacings] = useState<Map<string, PacingLog>>(new Map())
+  const [pacingsByLessonPlan, setPacingsByLessonPlan] = useState<Map<string, PacingLog>>(new Map())
   const [homeworkTasks, setHomeworkTasks] = useState<Map<string, HomeworkTask>>(new Map())
   const [exitByModule, setExitByModule] = useState<Map<string, { count: number; avg: number }>>(new Map())
   const [exitByLessonPlan, setExitByLessonPlan] = useState<Map<string, { count: number; avg: number }>>(new Map())
@@ -130,6 +131,7 @@ export default function PacingPage() {
       ])
       setPlans(new Map(pl.map((p: PlanSubmission) => [p.module_id, p])))
       setPacings(latestPacingByModule(pc))
+      setPacingsByLessonPlan(latestPacingByLessonPlan(pc))
 
       // rooms bound to this teacher — exit-ticket totals should count only these students
       if (teacherId) {
@@ -297,11 +299,11 @@ export default function PacingPage() {
                       key={lp.id}
                       module={m}
                       lessonPlan={lp}
-                      pacing={pacings.get(m.id)}
+                      pacing={pacingsByLessonPlan.get(lp.id)}
                       teacherId={teacherId}
                       exitSummary={lpExitSummary}
                       onOpenExitTicket={() => router.push(`/teacher/assessment?module=${m.id}&lesson_plan_id=${lp.id}`)}
-                      onPacingChange={log => setPacings(prev => new Map(prev).set(m.id, log))}
+                      onPacingChange={log => setPacingsByLessonPlan(prev => new Map(prev).set(lp.id, log))}
                       isCurrent={selectedWeek === currentWeek}
                     />
                   )

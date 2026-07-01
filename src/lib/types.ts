@@ -183,6 +183,7 @@ export interface PacingLog {
   id: string
   teacher_id: string
   module_id: string
+  lesson_plan_id: string | null
   status: PacingStatus
   created_at: string
   curriculum_modules?: CurriculumModule
