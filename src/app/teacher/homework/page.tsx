@@ -192,89 +192,74 @@ export default function HomeworkPage() {
     return (data ?? []) as HomeworkSubmission[]
   }
 
+  // Re-sync local state for these students from the DB (the source of truth) after a write.
+  async function reconcile(studentIds: string[]) {
+    const rows = await fetchVerified(studentIds)
+    setAllSubs(prev => [
+      ...prev.filter(s => !(s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId && studentIds.includes(s.student_id))),
+      ...rows,
+    ])
+    return rows
+  }
+
   async function setStatus(studentId: string, status: HomeworkStatus) {
-    const existing = allSubs.find(s =>
-      s.student_id === studentId && s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId
-    )
+    // optimistic UI
     setAllSubs(prev => [
       ...prev.filter(s => !(s.module_id === selectedModule && s.student_id === studentId && (s.lesson_plan_id ?? null) === selectedLessonPlanId)),
-      { id: existing?.id ?? '', student_id: studentId, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId, status, created_at: existing?.created_at ?? '' },
+      { id: '', student_id: studentId, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId, status, created_at: '' },
     ])
-
     try {
-      if (existing?.id) {
-        await supabase.from('homework_submissions').update({ status }).eq('id', existing.id)
-      } else {
-        await supabase.from('homework_submissions')
-          .insert({ school_id: schoolId, student_id: studentId, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId, status })
-      }
-
-      const [verified] = await fetchVerified([studentId])
-      setAllSubs(prev => [
-        ...prev.filter(s => !(s.student_id === studentId && s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId)),
-        ...(verified ? [verified] : []),
-      ])
+      // upsert = insert-or-update atomically at the DB level, so we never depend on
+      // possibly-stale local state to decide insert vs update. onConflict matches the
+      // unique index on (student_id, module_id, lesson_plan_id).
+      const { error } = await supabase.from('homework_submissions').upsert(
+        { school_id: schoolId, student_id: studentId, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId, status },
+        { onConflict: 'student_id,module_id,lesson_plan_id' }
+      )
+      if (error) throw new Error(error.message)
+      const [verified] = await reconcile([studentId])
       if (!verified || verified.status !== status) {
         alert('บันทึกไม่สำเร็จสำหรับนักเรียนคนนี้ กรุณาลองใหม่')
       }
     } catch (e) {
-      // a thrown exception (network failure, etc.) instead of a Supabase {error} field
-      // must not die silently — without this the optimistic update above would be the
-      // only thing the teacher ever sees, with nothing actually persisted
-      alert(`บันทึกไม่สำเร็จ (เกิดข้อผิดพลาดที่ไม่คาดคิด): ${e instanceof Error ? e.message : String(e)}`)
+      alert(`บันทึกไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)
+      await reconcile([studentId]).catch(() => {})
     }
   }
 
   async function markAllOnTime() {
     if (markingAll) return
     setMarkingAll(true)
+    const studentIds = visibleStudents.map(s => s.id)
     try {
-      const existingByStudent = new Map(
-        allSubs
-          .filter(s => s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId)
-          .map(s => [s.student_id, s])
-      )
-      setAllSubs(prev => [
-        ...prev.filter(s => !(s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId && visibleStudents.some(v => v.id === s.student_id))),
-        ...visibleStudents.map(s => ({
-          id: existingByStudent.get(s.id)?.id ?? '',
-          student_id: s.id,
-          module_id: selectedModule,
-          lesson_plan_id: selectedLessonPlanId,
-          status: 'On_Time' as HomeworkStatus,
-          created_at: existingByStudent.get(s.id)?.created_at ?? '',
-        })),
-      ])
-      await Promise.all(visibleStudents.map(async s => {
-        // treat an existing row with no real id (e.g. a prior bulk-insert that never
-        // got its id patched back) as "not existing" -- an update against id: '' would
-        // match zero rows and silently no-op instead of ever persisting the change
-        const existing = existingByStudent.get(s.id)
-        if (existing?.id) {
-          await supabase.from('homework_submissions').update({ status: 'On_Time' }).eq('id', existing.id)
-        } else {
-          await supabase.from('homework_submissions')
-            .insert({ school_id: schoolId, student_id: s.id, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId, status: 'On_Time' })
-        }
-      }))
-
-      const studentIds = visibleStudents.map(s => s.id)
-      const verifiedRows = await fetchVerified(studentIds)
+      // optimistic UI
       setAllSubs(prev => [
         ...prev.filter(s => !(s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId && studentIds.includes(s.student_id))),
-        ...verifiedRows,
+        ...visibleStudents.map(s => ({
+          id: '', student_id: s.id, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId,
+          status: 'On_Time' as HomeworkStatus, created_at: '',
+        })),
       ])
+      // one atomic batch upsert for the whole room -- no per-row insert/update branching,
+      // no dependence on stale local state, no duplicate inserts, no 409 conflicts
+      const { error } = await supabase.from('homework_submissions').upsert(
+        visibleStudents.map(s => ({
+          school_id: schoolId, student_id: s.id, module_id: selectedModule,
+          lesson_plan_id: selectedLessonPlanId, status: 'On_Time' as HomeworkStatus,
+        })),
+        { onConflict: 'student_id,module_id,lesson_plan_id' }
+      )
+      if (error) throw new Error(error.message)
 
+      const verifiedRows = await reconcile(studentIds)
       const confirmed = new Set(verifiedRows.filter(s => s.status === 'On_Time').map(s => s.student_id))
       const notConfirmed = visibleStudents.filter(s => !confirmed.has(s.id))
       if (notConfirmed.length > 0) {
         alert(`บันทึกไม่ครบ ${notConfirmed.length} คน: ${notConfirmed.map(s => s.name).join(', ')}\nกรุณากด "ส่งทั้งหมด" อีกครั้ง`)
       }
     } catch (e) {
-      // same rationale as setStatus's catch -- an unhandled rejection here would silently
-      // leave the optimistic "everyone is On_Time" update on screen with nothing persisted,
-      // and would also leave the button stuck disabled since markingAll never gets reset
-      alert(`บันทึกไม่สำเร็จ (เกิดข้อผิดพลาดที่ไม่คาดคิด): ${e instanceof Error ? e.message : String(e)}`)
+      alert(`บันทึกไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)
+      await reconcile(studentIds).catch(() => {})
     } finally {
       setMarkingAll(false)
     }
