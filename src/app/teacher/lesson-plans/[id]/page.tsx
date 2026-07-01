@@ -61,9 +61,10 @@ export default function LessonPlanDetailPage() {
   const [mod, setMod] = useState<CurriculumModule | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Date
+  // Date(s) — a plan can be taught to different rooms on different days
   const [editingDate, setEditingDate] = useState(false)
-  const [dateInput, setDateInput] = useState('')
+  const [dateList, setDateList] = useState<string[]>([])
+  const [newDateInput, setNewDateInput] = useState('')
   const [savingDate, setSavingDate] = useState(false)
   const [dateSaved, setDateSaved] = useState(false)
 
@@ -94,7 +95,7 @@ export default function LessonPlanDetailPage() {
       if (!p) { setLoading(false); return }
       const lp = p as LessonPlan
       setPlan(lp)
-      setDateInput(lp.teach_date ?? '')
+      setDateList(lp.teach_dates ?? [])
       setPostNote(lp.post_lesson_note ?? '')
       setSuggestion(lp.suggestion ?? '')
       if (lp.module_id) {
@@ -143,13 +144,26 @@ export default function LessonPlanDetailPage() {
     setTimeout(() => setPlanSaved(false), 2500)
   }
 
+  function addDate() {
+    if (!newDateInput) return
+    if (!dateList.includes(newDateInput)) {
+      setDateList(prev => [...prev, newDateInput].sort())
+    }
+    setNewDateInput('')
+  }
+
+  function removeDate(d: string) {
+    setDateList(prev => prev.filter(x => x !== d))
+  }
+
   async function saveDate() {
     if (!plan) return
     setSavingDate(true)
-    const { error } = await supabase.from('lesson_plans').update({ teach_date: dateInput || null }).eq('id', plan.id)
+    const value = dateList.length > 0 ? dateList : null
+    const { error } = await supabase.from('lesson_plans').update({ teach_dates: value }).eq('id', plan.id)
     setSavingDate(false)
     if (error) { alert(`บันทึกวันที่สอนไม่สำเร็จ: ${error.message}`); return }
-    setPlan(p => p ? { ...p, teach_date: dateInput || null } : p)
+    setPlan(p => p ? { ...p, teach_dates: value } : p)
     setEditingDate(false)
     setDateSaved(true)
     setTimeout(() => setDateSaved(false), 2000)
@@ -345,19 +359,38 @@ export default function LessonPlanDetailPage() {
           )}
         </div>
         {editingDate ? (
-          <div className="flex gap-2 mt-2">
-            <input type="date" value={dateInput} onChange={e => setDateInput(e.target.value)}
-              className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-            <button onClick={saveDate} disabled={savingDate}
-              className="bg-violet-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1 disabled:opacity-50">
-              {savingDate ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} บันทึก
-            </button>
-            <button onClick={() => { setEditingDate(false); setDateInput(plan.teach_date ?? '') }}
-              className="text-xs text-gray-400 hover:text-gray-600 px-2">ยกเลิก</button>
+          <div className="mt-2 space-y-2">
+            <p className="text-[11px] text-gray-400">เพิ่มได้หลายวัน — เผื่อสอนคนละห้องคนละวัน</p>
+            {dateList.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {dateList.map(d => (
+                  <span key={d} className="inline-flex items-center gap-1 text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200 px-2 py-1 rounded-lg">
+                    {d}
+                    <button onClick={() => removeDate(d)} className="text-teal-400 hover:text-red-500"><X size={12} /></button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input type="date" value={newDateInput} onChange={e => setNewDateInput(e.target.value)}
+                className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+              <button onClick={addDate} disabled={!newDateInput}
+                className="bg-white border border-violet-200 text-violet-600 text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-40">
+                + เพิ่มวันที่
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={saveDate} disabled={savingDate}
+                className="flex-1 bg-violet-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center justify-center gap-1 disabled:opacity-50">
+                {savingDate ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} บันทึก
+              </button>
+              <button onClick={() => { setEditingDate(false); setDateList(plan.teach_dates ?? []); setNewDateInput('') }}
+                className="text-xs text-gray-400 hover:text-gray-600 px-2">ยกเลิก</button>
+            </div>
           </div>
         ) : (
-          <p className={`text-sm mt-1 ${plan.teach_date ? 'text-teal-700 font-semibold' : 'text-amber-500'}`}>
-            {plan.teach_date ?? 'ยังไม่ได้ระบุ — กดแก้ไข'}
+          <p className={`text-sm mt-1 ${plan.teach_dates?.length ? 'text-teal-700 font-semibold' : 'text-amber-500'}`}>
+            {plan.teach_dates?.length ? plan.teach_dates.join(', ') : 'ยังไม่ได้ระบุ — กดแก้ไข'}
           </p>
         )}
         {dateSaved && <p className="text-xs text-green-600 mt-1">บันทึกแล้ว ✓</p>}

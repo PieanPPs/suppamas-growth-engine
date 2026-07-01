@@ -228,7 +228,7 @@ export interface LessonPlan {
   topic: string
   subject: string | null
   grade: string | null
-  teach_date: string | null  // YYYY-MM-DD
+  teach_dates: string[] | null  // each YYYY-MM-DD -- a plan can be taught to different rooms on different days
   indicators_interim: string | null
   indicators_final: string | null
   objectives_k: string | null

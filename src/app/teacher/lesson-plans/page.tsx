@@ -275,9 +275,9 @@ export default function LessonPlansPage() {
                                 )}
                               </div>
                               <p className="text-sm font-semibold text-gray-800 mt-0.5">{plan.topic}</p>
-                              {plan.teach_date ? (
+                              {plan.teach_dates?.length ? (
                                 <p className="text-xs text-teal-600 flex items-center gap-1 mt-0.5">
-                                  <CalendarDays size={10} /> {plan.teach_date}
+                                  <CalendarDays size={10} /> {plan.teach_dates.join(', ')}
                                 </p>
                               ) : (
                                 <p className="text-xs text-amber-500 mt-0.5">ยังไม่ได้ระบุวันที่สอน</p>

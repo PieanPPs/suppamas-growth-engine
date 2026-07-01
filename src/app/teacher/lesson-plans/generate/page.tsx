@@ -42,11 +42,24 @@ function buildPrompt(opts: {
   duration: string
 }) {
   // split by type so the AI doesn't have to guess which selected indicator goes under
-  // ===ตัวชี้วัดระหว่างทาง=== vs ===ตัวชี้วัดปลายทาง=== -- the teacher already told us via the tabs
+  // ===ตัวชี้วัดระหว่างทาง=== vs ===ตัวชี้วัดปลายทาง=== -- the teacher already told us via the tabs.
+  // Also group by มาตรฐาน (standard) within each so the AI's plan can reference the standard
+  // directly and the teacher can see at a glance which indicators sit under which standard.
   const interim = opts.indicators.filter(i => i.type === 'interim')
   const final = opts.indicators.filter(i => i.type === 'final')
+  const byStandard = (list: Indicator[]) => {
+    const map = new Map<string, Indicator[]>()
+    list.forEach(i => {
+      const key = i.standard || 'ไม่ระบุมาตรฐาน'
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(i)
+    })
+    return map
+  }
   const fmt = (list: Indicator[]) => list.length
-    ? list.map(i => `  - ${i.code}: ${i.description}`).join('\n')
+    ? Array.from(byStandard(list)).map(([standard, inds]) =>
+        `  มาตรฐาน ${standard}:\n${inds.map(i => `    - ${i.code}: ${i.description}`).join('\n')}`
+      ).join('\n')
     : '  - (ไม่ได้เลือก)'
   const indList = opts.indicators.length
     ? `ตัวชี้วัดระหว่างทาง (ที่ครูเลือก):\n${fmt(interim)}\nตัวชี้วัดปลายทาง (ที่ครูเลือก):\n${fmt(final)}`
@@ -226,7 +239,7 @@ export default function GenerateLessonPlanPage() {
       topic: topic.trim(),
       subject: course?.name ?? mod?.subject ?? null,
       grade: course?.grade ?? null,
-      teach_date: null,
+      teach_dates: null,
       ...parsed,
     }).select().single()
 
@@ -344,14 +357,14 @@ export default function GenerateLessonPlanPage() {
                   indicators
                     .filter(i => indTypeTab === 'all' || i.type === indTypeTab)
                     .reduce((map, ind) => {
-                      const key = ind.strand || 'ไม่ระบุสาระการเรียนรู้'
+                      const key = ind.standard || 'ไม่ระบุมาตรฐาน'
                       if (!map.has(key)) map.set(key, [])
                       map.get(key)!.push(ind)
                       return map
                     }, new Map<string, Indicator[]>())
-                ).map(([strand, inds]) => (
-                  <div key={strand} className="border-b border-gray-100 last:border-b-0">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide px-3 pt-2">{strand}</p>
+                ).map(([standard, inds]) => (
+                  <div key={standard} className="border-b border-gray-100 last:border-b-0">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide px-3 pt-2">มาตรฐาน {standard}</p>
                     <div className="divide-y divide-gray-100">
                       {inds.map(ind => (
                         <label key={ind.id} className="flex items-start gap-2.5 px-3 py-2 cursor-pointer hover:bg-gray-50">

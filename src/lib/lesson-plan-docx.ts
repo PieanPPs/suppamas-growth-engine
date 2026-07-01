@@ -35,9 +35,9 @@ export async function fetchLogoForDocx(url: string, maxSize = 70): Promise<{ dat
   }
 }
 
-function formatThaiDate(dateStr: string | null): string {
-  if (!dateStr) return '..............................'
-  return new Date(dateStr).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
+function formatThaiDates(dates: string[] | null): string {
+  if (!dates?.length) return '..............................'
+  return dates.map(d => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })).join(', ')
 }
 
 /** ย่อขนาดโลโก้ให้ไม่เกินความกว้าง/สูงที่กำหนด (คงสัดส่วน) — ใช้ตอนวางลงเอกสาร Word */
@@ -99,7 +99,7 @@ export function buildLessonPlanBlock(docx: DocxLib, input: LessonPlanDocInput) {
     new Paragraph({
       spacing: { after: 100 },
       border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000', space: 1 } },
-      children: [run(`ครูผู้สอน          ${teacherName ?? '..............................'}          วันที่สอน          ${formatThaiDate(plan.teach_date)}`)],
+      children: [run(`ครูผู้สอน          ${teacherName ?? '..............................'}          วันที่สอน          ${formatThaiDates(plan.teach_dates)}`)],
     }),
     ...section(1, 'มาตรฐานการเรียนรู้', [
       plan.indicators_interim ? `1.1 ตัวชี้วัดระหว่างทาง\n${plan.indicators_interim}` : null,

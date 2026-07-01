@@ -108,8 +108,8 @@ export default function LessonPlanPrintPage() {
   )
   if (!plan) return <div className="text-center py-16 text-gray-400">ไม่พบแผนการสอน</div>
 
-  const teachDate = plan.teach_date
-    ? new Date(plan.teach_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
+  const teachDate = plan.teach_dates?.length
+    ? plan.teach_dates.map(d => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })).join(', ')
     : '..............................'
 
   return (
