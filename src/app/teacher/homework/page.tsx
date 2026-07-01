@@ -178,40 +178,42 @@ export default function HomeworkPage() {
     setEditTask(false)
   }, [selectedModule, selectedLessonPlanId, tasks])
 
+  // Re-reads the DB directly for exactly these students/module/lesson-plan and returns
+  // fresh rows. Used after every write instead of trusting "no error" from the write
+  // itself -- an update that matches zero rows (e.g. a stale/wrong id) reports success
+  // with no error yet changes nothing, which is what's been causing "saved" states that
+  // don't actually persist. This closes that gap by always checking the source of truth.
+  async function fetchVerified(studentIds: string[]): Promise<HomeworkSubmission[]> {
+    let q = supabase.from('homework_submissions').select('*')
+      .eq('school_id', schoolId).eq('module_id', selectedModule).in('student_id', studentIds)
+    q = selectedLessonPlanId ? q.eq('lesson_plan_id', selectedLessonPlanId) : q.is('lesson_plan_id', null)
+    const { data } = await q
+    return (data ?? []) as HomeworkSubmission[]
+  }
+
   async function setStatus(studentId: string, status: HomeworkStatus) {
     const existing = allSubs.find(s =>
       s.student_id === studentId && s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId
     )
-    const prevStatus = existing?.status
     setAllSubs(prev => [
       ...prev.filter(s => !(s.module_id === selectedModule && s.student_id === studentId && (s.lesson_plan_id ?? null) === selectedLessonPlanId)),
       { id: existing?.id ?? '', student_id: studentId, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId, status, created_at: existing?.created_at ?? '' },
     ])
 
-    let error: string | null = null
     if (existing?.id) {
-      const { error: err } = await supabase.from('homework_submissions').update({ status }).eq('id', existing.id)
-      error = err?.message ?? null
+      await supabase.from('homework_submissions').update({ status }).eq('id', existing.id)
     } else {
-      const { data, error: err } = await supabase.from('homework_submissions')
+      await supabase.from('homework_submissions')
         .insert({ school_id: schoolId, student_id: studentId, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId, status })
-        .select().single()
-      error = err?.message ?? null
-      if (data) {
-        setAllSubs(prev => prev.map(s =>
-          s.student_id === studentId && s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId
-            ? { ...s, id: (data as HomeworkSubmission).id }
-            : s
-        ))
-      }
     }
 
-    if (error) {
-      alert(`บันทึกไม่สำเร็จ: ${error}`)
-      // revert to the last known-good status so the UI doesn't lie
-      setAllSubs(prev => prevStatus
-        ? prev.map(s => (s.student_id === studentId && s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId) ? { ...s, status: prevStatus } : s)
-        : prev.filter(s => !(s.student_id === studentId && s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId && s.id === '')))
+    const [verified] = await fetchVerified([studentId])
+    setAllSubs(prev => [
+      ...prev.filter(s => !(s.student_id === studentId && s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId)),
+      ...(verified ? [verified] : []),
+    ])
+    if (!verified || verified.status !== status) {
+      alert('บันทึกไม่สำเร็จสำหรับนักเรียนคนนี้ กรุณาลองใหม่')
     }
   }
 
@@ -234,42 +236,30 @@ export default function HomeworkPage() {
         created_at: existingByStudent.get(s.id)?.created_at ?? '',
       })),
     ])
-    const results = await Promise.all(visibleStudents.map(async s => {
+    await Promise.all(visibleStudents.map(async s => {
       // treat an existing row with no real id (e.g. a prior bulk-insert that never
       // got its id patched back) as "not existing" -- an update against id: '' would
       // match zero rows and silently no-op instead of ever persisting the change
       const existing = existingByStudent.get(s.id)
       if (existing?.id) {
-        const { error } = await supabase.from('homework_submissions').update({ status: 'On_Time' }).eq('id', existing.id)
-        return { studentId: s.id, recordId: existing.id, error: error?.message ?? null }
+        await supabase.from('homework_submissions').update({ status: 'On_Time' }).eq('id', existing.id)
+      } else {
+        await supabase.from('homework_submissions')
+          .insert({ school_id: schoolId, student_id: s.id, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId, status: 'On_Time' })
       }
-      const { data, error } = await supabase.from('homework_submissions')
-        .insert({ school_id: schoolId, student_id: s.id, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId, status: 'On_Time' })
-        .select().single()
-      return { studentId: s.id, recordId: data?.id ?? null, error: error?.message ?? null }
     }))
 
-    const succeeded = results.filter(r => !r.error)
-    const failed = results.filter(r => r.error)
+    const studentIds = visibleStudents.map(s => s.id)
+    const verifiedRows = await fetchVerified(studentIds)
+    setAllSubs(prev => [
+      ...prev.filter(s => !(s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId && studentIds.includes(s.student_id))),
+      ...verifiedRows,
+    ])
 
-    // patch in the real row id for anyone freshly inserted, so a later individual
-    // tap or bulk-send doesn't try to "update" a row that was never actually found
-    setAllSubs(prev => prev.map(s => {
-      if (!(s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId)) return s
-      const ok = succeeded.find(r => r.studentId === s.student_id)
-      return ok && ok.recordId ? { ...s, id: ok.recordId } : s
-    }))
-
-    if (failed.length > 0) {
-      // revert the students whose save actually failed back to their prior (or unset) status
-      setAllSubs(prev => prev
-        .filter(s => !(failed.some(f => f.studentId === s.student_id) && s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId && !existingByStudent.get(s.student_id)?.id))
-        .map(s => {
-          const wasFailed = failed.some(f => f.studentId === s.student_id) && s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId
-          const prior = existingByStudent.get(s.student_id)
-          return wasFailed && prior?.id ? { ...s, status: prior.status } : s
-        }))
-      alert(`บันทึกไม่สำเร็จ ${failed.length} คน: ${failed[0].error}`)
+    const confirmed = new Set(verifiedRows.filter(s => s.status === 'On_Time').map(s => s.student_id))
+    const notConfirmed = visibleStudents.filter(s => !confirmed.has(s.id))
+    if (notConfirmed.length > 0) {
+      alert(`บันทึกไม่ครบ ${notConfirmed.length} คน: ${notConfirmed.map(s => s.name).join(', ')}\nกรุณากด "ส่งทั้งหมด" อีกครั้ง`)
     }
     setMarkingAll(false)
   }
