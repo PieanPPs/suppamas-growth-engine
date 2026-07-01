@@ -57,11 +57,12 @@ export default function AdminLessonPlansPage() {
   async function approve(plan: PlanWithMeta) {
     setSaving(true)
     const now = new Date().toISOString()
-    await supabase.from('lesson_plans')
+    const { error } = await supabase.from('lesson_plans')
       .update({ status: 'approved', reviewed_at: now, reviewer_note: null })
       .eq('id', plan.id)
-    setPlans(ps => ps.map(p => p.id === plan.id ? { ...p, status: 'approved', reviewed_at: now, reviewer_note: null } : p))
     setSaving(false)
+    if (error) { alert(`อนุมัติไม่สำเร็จ: ${error.message}`); return }
+    setPlans(ps => ps.map(p => p.id === plan.id ? { ...p, status: 'approved', reviewed_at: now, reviewer_note: null } : p))
     setReviewing(null)
   }
 
@@ -69,11 +70,12 @@ export default function AdminLessonPlansPage() {
     if (!note.trim()) return
     setSaving(true)
     const now = new Date().toISOString()
-    await supabase.from('lesson_plans')
+    const { error } = await supabase.from('lesson_plans')
       .update({ status: 'revision', reviewed_at: now, reviewer_note: note.trim() })
       .eq('id', plan.id)
-    setPlans(ps => ps.map(p => p.id === plan.id ? { ...p, status: 'revision', reviewed_at: now, reviewer_note: note.trim() } : p))
     setSaving(false)
+    if (error) { alert(`ส่งขอแก้ไขไม่สำเร็จ: ${error.message}`); return }
+    setPlans(ps => ps.map(p => p.id === plan.id ? { ...p, status: 'revision', reviewed_at: now, reviewer_note: note.trim() } : p))
     setReviewing(null)
     setNote('')
   }
@@ -81,11 +83,12 @@ export default function AdminLessonPlansPage() {
   async function saveNote(plan: PlanWithMeta) {
     if (!note.trim()) return
     setSaving(true)
-    await supabase.from('lesson_plans')
+    const { error } = await supabase.from('lesson_plans')
       .update({ reviewer_note: note.trim() })
       .eq('id', plan.id)
-    setPlans(ps => ps.map(p => p.id === plan.id ? { ...p, reviewer_note: note.trim() } : p))
     setSaving(false)
+    if (error) { alert(`บันทึกหมายเหตุไม่สำเร็จ: ${error.message}`); return }
+    setPlans(ps => ps.map(p => p.id === plan.id ? { ...p, reviewer_note: note.trim() } : p))
     setReviewing(null)
     setNote('')
   }

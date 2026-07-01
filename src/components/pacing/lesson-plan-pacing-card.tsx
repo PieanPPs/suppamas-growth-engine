@@ -57,17 +57,20 @@ export function LessonPlanPacingCard({
     if (!teacherId) return
     setSavingStatus(true)
     if (pacing) {
-      await supabase.from('pacing_logs').update({ status }).eq('id', pacing.id)
+      const { error } = await supabase.from('pacing_logs').update({ status }).eq('id', pacing.id)
+      setSavingStatus(false)
+      if (error) { alert(`บันทึกสถานะไม่สำเร็จ: ${error.message}`); return }
       onPacingChange({ ...pacing, status })
     } else {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('pacing_logs')
         .insert({ school_id: schoolId, teacher_id: teacherId, module_id: module.id, status })
         .select()
         .single()
+      setSavingStatus(false)
+      if (error) { alert(`บันทึกสถานะไม่สำเร็จ: ${error.message}`); return }
       if (data) onPacingChange(data as PacingLog)
     }
-    setSavingStatus(false)
   }
 
   return (

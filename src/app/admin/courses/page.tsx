@@ -55,33 +55,43 @@ export default function CoursesPage() {
     setCodeError('')
   }
 
-  // cascade a subject_key rename across every table that references it
-  async function renameSubjectKey(oldKey: string, newKey: string) {
-    const { data: mods } = await supabase
+  // cascade a subject_key rename across every table that references it.
+  // Stops at the first failure and reports it — never call this from save() and
+  // then update courses.subject_key if this returns an error, since the rename
+  // is not atomic and a partial cascade must not be papered over as "renamed."
+  // Each step re-queries by oldKey, so re-running with the same (oldKey, newKey)
+  // after a failure only touches whatever wasn't migrated yet.
+  async function renameSubjectKey(oldKey: string, newKey: string): Promise<string | null> {
+    const { data: mods, error: modsSelectErr } = await supabase
       .from('curriculum_modules')
       .select('id, module_code')
       .eq('school_id', schoolId)
       .eq('subject', oldKey)
-    await Promise.all((mods ?? []).map(m => {
+    if (modsSelectErr) return `โหลดหน่วยการเรียนรู้ไม่สำเร็จ: ${modsSelectErr.message}`
+
+    for (const m of mods ?? []) {
       const suffix = m.module_code?.includes('-U') ? m.module_code.slice(m.module_code.lastIndexOf('-U')) : ''
-      return supabase.from('curriculum_modules')
+      const { error } = await supabase.from('curriculum_modules')
         .update({ subject: newKey, module_code: `${newKey}${suffix}` })
         .eq('id', m.id)
-    }))
+      if (error) return `อัปเดตหน่วยการเรียนรู้ (${m.module_code}) ไม่สำเร็จ: ${error.message}`
+    }
 
-    await Promise.all([
-      supabase.from('indicators').update({ subject: newKey }).eq('school_id', schoolId).eq('subject', oldKey),
-      supabase.from('tests').update({ subject: newKey }).eq('school_id', schoolId).eq('subject', oldKey),
-      supabase.from('score_components').update({ subject: newKey }).eq('school_id', schoolId).eq('subject', oldKey),
-      supabase.from('trait_ratings').update({ subject: newKey }).eq('school_id', schoolId).eq('subject', oldKey),
-    ])
+    const tables = ['indicators', 'tests', 'score_components', 'trait_ratings'] as const
+    for (const table of tables) {
+      const { error } = await supabase.from(table).update({ subject: newKey }).eq('school_id', schoolId).eq('subject', oldKey)
+      if (error) return `อัปเดตตาราง ${table} ไม่สำเร็จ: ${error.message}`
+    }
 
     const affectedTeachers = teachers.filter(t => (t.subjects ?? []).includes(oldKey))
-    await Promise.all(affectedTeachers.map(t =>
-      supabase.from('teachers').update({
+    for (const t of affectedTeachers) {
+      const { error } = await supabase.from('teachers').update({
         subjects: (t.subjects ?? []).map(s => s === oldKey ? newKey : s),
       }).eq('id', t.id)
-    ))
+      if (error) return `อัปเดตครู "${t.name}" ไม่สำเร็จ: ${error.message}`
+    }
+
+    return null
   }
 
   async function save() {
@@ -94,12 +104,14 @@ export default function CoursesPage() {
     setSaving(true)
 
     if (editing === 'new') {
-      await supabase.from('courses').insert({
+      const { error } = await supabase.from('courses').insert({
         school_id: schoolId,
         subject_key: code,
         name: draftName.trim(),
         grade: draftGrade.trim() || null,
       })
+      setSaving(false)
+      if (error) { alert(`สร้างวิชาไม่สำเร็จ: ${error.message}`); return }
     } else {
       const original = courses.find(c => c.id === editing)
       if (original && original.subject_key !== code) {
@@ -107,29 +119,46 @@ export default function CoursesPage() {
           setSaving(false)
           return
         }
-        await renameSubjectKey(original.subject_key, code)
+        const cascadeError = await renameSubjectKey(original.subject_key, code)
+        if (cascadeError) {
+          setSaving(false)
+          alert(`เปลี่ยนรหัสไม่สำเร็จ: ${cascadeError}\n\nบางส่วนอาจถูกเปลี่ยนไปแล้ว — ยังไม่ได้เปลี่ยนรหัสหลักของวิชา กด "บันทึก" อีกครั้งเพื่อลองทำส่วนที่เหลือต่อได้`)
+          return
+        }
       }
-      await supabase.from('courses').update({
+      const { error } = await supabase.from('courses').update({
         subject_key: code,
         name: draftName.trim(),
         grade: draftGrade.trim() || null,
       }).eq('id', editing)
+      setSaving(false)
+      if (error) { alert(`บันทึกวิชาไม่สำเร็จ: ${error.message}`); return }
     }
-    setSaving(false)
     setEditing(null)
     load()
   }
 
   async function remove(c: Course) {
     if (!confirm(`ลบวิชา "${c.name}"? จะลบหน่วยการเรียนรู้ทั้งหมดในวิชานี้ด้วย`)) return
-    await supabase.from('curriculum_modules').delete().eq('school_id', schoolId).eq('subject', c.subject_key)
-    await supabase.from('courses').delete().eq('id', c.id)
-    // remove from all teachers
+
+    const { error: modErr } = await supabase.from('curriculum_modules').delete().eq('school_id', schoolId).eq('subject', c.subject_key)
+    if (modErr) { alert(`ลบหน่วยการเรียนรู้ไม่สำเร็จ: ${modErr.message}\nยังไม่ได้ลบวิชา — ลองกดลบอีกครั้ง`); return }
+
+    const { error: courseErr } = await supabase.from('courses').delete().eq('id', c.id)
+    if (courseErr) { alert(`ลบวิชาไม่สำเร็จ: ${courseErr.message}`); return }
+
+    // remove from all teachers — course + modules are already gone at this point,
+    // so a failure here only leaves a stale subject key in that teacher's list
     const affected = teachers.filter(t => t.subjects?.includes(c.subject_key))
+    const teacherErrors: string[] = []
     for (const t of affected) {
-      await supabase.from('teachers').update({
+      const { error } = await supabase.from('teachers').update({
         subjects: (t.subjects ?? []).filter(s => s !== c.subject_key),
       }).eq('id', t.id)
+      if (error) teacherErrors.push(t.name)
+    }
+    if (teacherErrors.length > 0) {
+      alert(`ลบวิชาสำเร็จ แต่ปรับข้อมูลครูไม่สำเร็จ: ${teacherErrors.join(', ')}\nกรุณาตรวจสอบที่หน้าจัดการครู`)
     }
     load()
   }

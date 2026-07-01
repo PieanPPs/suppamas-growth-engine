@@ -115,11 +115,16 @@ export function WeeklyPlanCard({
     if (file) {
       const ext = file.name.split('.').pop()
       const path = `${teacherId}/${module.id}.${ext}`
-      const { error } = await supabase.storage.from('lesson-plans').upload(path, file, { upsert: true })
-      if (!error) filePath = path
+      const { error: uploadError } = await supabase.storage.from('lesson-plans').upload(path, file, { upsert: true })
+      if (uploadError) {
+        setSaving(false)
+        alert(`แนบไฟล์ไม่สำเร็จ: ${uploadError.message}`)
+        return
+      }
+      filePath = path
     }
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('plan_submissions')
       .upsert(
         {
@@ -136,13 +141,23 @@ export function WeeklyPlanCard({
       )
       .select()
       .single()
+    if (error) {
+      setSaving(false)
+      alert(`บันทึกแผนไม่สำเร็จ: ${error.message}`)
+      return
+    }
     if (data) setPlan(data as PlanSubmission)
 
     // homework quest (one per module)
     if (homework.trim()) {
-      await supabase
+      const { error: hwError } = await supabase
         .from('homework_tasks')
         .upsert({ school_id: schoolId, module_id: module.id, title: homework.trim() }, { onConflict: 'module_id' })
+      if (hwError) {
+        setSaving(false)
+        alert(`บันทึกภาระงานไม่สำเร็จ: ${hwError.message}`)
+        return
+      }
     }
 
     setSaving(false)
@@ -155,17 +170,20 @@ export function WeeklyPlanCard({
     if (!teacherId) return
     setSavingStatus(true)
     if (pacing) {
-      await supabase.from('pacing_logs').update({ status }).eq('id', pacing.id)
+      const { error } = await supabase.from('pacing_logs').update({ status }).eq('id', pacing.id)
+      setSavingStatus(false)
+      if (error) { alert(`บันทึกสถานะไม่สำเร็จ: ${error.message}`); return }
       setPacing({ ...pacing, status })
     } else {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('pacing_logs')
         .insert({ school_id: schoolId, teacher_id: teacherId, module_id: module.id, status })
         .select()
         .single()
+      setSavingStatus(false)
+      if (error) { alert(`บันทึกสถานะไม่สำเร็จ: ${error.message}`); return }
       if (data) setPacing(data as PacingLog)
     }
-    setSavingStatus(false)
   }
 
   const fileUrl = plan?.file_path

@@ -134,9 +134,10 @@ export default function LessonPlanDetailPage() {
   async function savePlan() {
     if (!plan) return
     setSavingPlan(true)
-    await supabase.from('lesson_plans').update({ ...draft, status: 'draft' }).eq('id', plan.id)
-    setPlan(p => p ? { ...p, ...draft, status: 'draft' } : p)
+    const { error } = await supabase.from('lesson_plans').update({ ...draft, status: 'draft' }).eq('id', plan.id)
     setSavingPlan(false)
+    if (error) { alert(`บันทึกแผนไม่สำเร็จ: ${error.message}`); return }
+    setPlan(p => p ? { ...p, ...draft, status: 'draft' } : p)
     setEditMode(false)
     setPlanSaved(true)
     setTimeout(() => setPlanSaved(false), 2500)
@@ -145,9 +146,10 @@ export default function LessonPlanDetailPage() {
   async function saveDate() {
     if (!plan) return
     setSavingDate(true)
-    await supabase.from('lesson_plans').update({ teach_date: dateInput || null }).eq('id', plan.id)
-    setPlan(p => p ? { ...p, teach_date: dateInput || null } : p)
+    const { error } = await supabase.from('lesson_plans').update({ teach_date: dateInput || null }).eq('id', plan.id)
     setSavingDate(false)
+    if (error) { alert(`บันทึกวันที่สอนไม่สำเร็จ: ${error.message}`); return }
+    setPlan(p => p ? { ...p, teach_date: dateInput || null } : p)
     setEditingDate(false)
     setDateSaved(true)
     setTimeout(() => setDateSaved(false), 2000)
@@ -156,11 +158,12 @@ export default function LessonPlanDetailPage() {
   async function savePostLesson() {
     if (!plan) return
     setSavingPost(true)
-    await supabase.from('lesson_plans')
+    const { error } = await supabase.from('lesson_plans')
       .update({ post_lesson_note: postNote || null, suggestion: suggestion || null })
       .eq('id', plan.id)
-    setPlan(p => p ? { ...p, post_lesson_note: postNote || null, suggestion: suggestion || null } : p)
     setSavingPost(false)
+    if (error) { alert(`บันทึกหลังสอนไม่สำเร็จ: ${error.message}`); return }
+    setPlan(p => p ? { ...p, post_lesson_note: postNote || null, suggestion: suggestion || null } : p)
     setPostSaved(true)
     setTimeout(() => setPostSaved(false), 2500)
   }
@@ -169,21 +172,23 @@ export default function LessonPlanDetailPage() {
     if (!plan) return
     setSubmitting(true)
     const now = new Date().toISOString()
-    await supabase.from('lesson_plans')
+    const { error } = await supabase.from('lesson_plans')
       .update({ status: 'submitted', submitted_at: now, reviewer_note: null })
       .eq('id', plan.id)
-    setPlan(p => p ? { ...p, status: 'submitted', submitted_at: now, reviewer_note: null } : p)
     setSubmitting(false)
+    if (error) { alert(`ส่งแผนไม่สำเร็จ: ${error.message}`); return }
+    setPlan(p => p ? { ...p, status: 'submitted', submitted_at: now, reviewer_note: null } : p)
   }
 
   async function recallPlan() {
     if (!plan) return
     setSubmitting(true)
-    await supabase.from('lesson_plans')
+    const { error } = await supabase.from('lesson_plans')
       .update({ status: 'draft', submitted_at: null })
       .eq('id', plan.id)
-    setPlan(p => p ? { ...p, status: 'draft', submitted_at: null } : p)
     setSubmitting(false)
+    if (error) { alert(`เรียกคืนแผนไม่สำเร็จ: ${error.message}`); return }
+    setPlan(p => p ? { ...p, status: 'draft', submitted_at: null } : p)
   }
 
   if (loading) return (
