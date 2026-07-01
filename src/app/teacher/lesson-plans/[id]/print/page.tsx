@@ -5,24 +5,15 @@ import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { LessonPlan, CurriculumModule, School, Teacher } from '@/lib/types'
 import { getSchoolId } from '@/lib/school'
-import { Loader2 } from 'lucide-react'
+import { loadDocxLib, fetchLogoForDocx, buildLessonPlanBlock } from '@/lib/lesson-plan-docx'
+import { Loader2, FileText, Printer } from 'lucide-react'
 
-function Row({ label, value }: { label: string; value?: string | null }) {
+function Section({ no, title, body }: { no: number; title: string; body?: string | null }) {
   return (
-    <tr>
-      <td className="border border-gray-400 px-2 py-1 font-semibold text-sm w-1/4 align-top bg-gray-50">{label}</td>
-      <td className="border border-gray-400 px-2 py-1 text-sm whitespace-pre-line">{value ?? ''}</td>
-    </tr>
-  )
-}
-
-function SectionHeader({ no, title }: { no: number; title: string }) {
-  return (
-    <tr>
-      <td colSpan={2} className="border border-gray-400 px-2 py-1.5 font-bold text-sm bg-gray-100">
-        {no}. {title}
-      </td>
-    </tr>
+    <div className="mt-3">
+      <p className="font-bold text-[16px]">{no}. {title}</p>
+      <p className="text-[16px] whitespace-pre-line">{body || ' '}</p>
+    </div>
   )
 }
 
@@ -35,6 +26,7 @@ export default function LessonPlanPrintPage() {
   const [school, setSchool] = useState<School | null>(null)
   const [teacher, setTeacher] = useState<Teacher | null>(null)
   const [loading, setLoading] = useState(true)
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -59,6 +51,56 @@ export default function LessonPlanPrintPage() {
     load()
   }, [id])
 
+  const logoUrl = school?.logo_path
+    ? supabase.storage.from('school-assets').getPublicUrl(school.logo_path).data.publicUrl
+    : null
+
+  async function exportWord() {
+    if (!plan || exporting) return
+    setExporting(true)
+    try {
+      const docx = await loadDocxLib()
+      const { Document, Packer, convertInchesToTwip } = docx
+      const logo = logoUrl ? await fetchLogoForDocx(logoUrl) : null
+
+      const doc = new Document({
+        sections: [{
+          properties: {
+            page: {
+              size: { width: 11906, height: 16838 }, // A4
+              margin: {
+                top: convertInchesToTwip(1),
+                right: convertInchesToTwip(1),
+                bottom: convertInchesToTwip(1),
+                left: convertInchesToTwip(1.18),
+              },
+            },
+          },
+          children: buildLessonPlanBlock(docx, {
+            plan,
+            moduleTitle: mod?.title ?? null,
+            teacherName: teacher?.name ?? null,
+            schoolName: school?.name ?? 'โรงเรียน',
+            directorName: school?.director_name ?? null,
+            logo,
+          }),
+        }],
+      })
+
+      const blob = await Packer.toBlob(doc)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `แผนที่${plan.plan_number} ${plan.topic}.docx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   if (loading) return (
     <div className="flex items-center justify-center py-24">
       <Loader2 className="animate-spin text-violet-500" size={32} />
@@ -72,140 +114,78 @@ export default function LessonPlanPrintPage() {
 
   return (
     <>
-      {/* Print styles */}
       <style>{`
         @media print {
-          body { font-family: 'TH Sarabun New', 'Sarabun', sans-serif; }
           .no-print { display: none !important; }
           @page { margin: 1.5cm; size: A4; }
         }
-        body { font-family: 'TH Sarabun New', 'Sarabun', sans-serif; }
       `}</style>
 
-      {/* Print button */}
-      <div className="no-print fixed top-4 right-4 z-50">
+      {/* Action buttons */}
+      <div className="no-print fixed top-4 right-4 z-50 flex gap-2">
+        <button onClick={exportWord} disabled={exporting}
+          className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-md">
+          <FileText size={15} /> {exporting ? 'กำลังสร้าง...' : 'Export Word'}
+        </button>
         <button onClick={() => window.print()}
-          className="bg-violet-600 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-violet-700">
-          พิมพ์ / บันทึก PDF
+          className="inline-flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-md">
+          <Printer size={15} /> พิมพ์ / บันทึก PDF
         </button>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-6 text-gray-900">
-        {/* Title */}
-        <div className="text-center mb-4">
-          <p className="text-lg font-bold">แผนการจัดการเรียนรู้</p>
-          <p className="text-base font-semibold mt-0.5">
-            แผนการเรียนรู้ที่ {plan.plan_number} เรื่อง {plan.topic}
-          </p>
-        </div>
+      <div className="max-w-2xl mx-auto px-4 py-6 text-gray-900 font-sarabun">
+        {/* Logo + title */}
+        {logoUrl && (
+          <div className="flex justify-center mb-1">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={logoUrl} alt="โลโก้โรงเรียน" className="h-16 w-auto object-contain" />
+          </div>
+        )}
+        <p className="text-center text-[16px] font-bold">{school?.name ?? 'โรงเรียน'}</p>
+        <p className="text-center text-[18px] font-bold mt-1">แผนการจัดการเรียนรู้</p>
+        <p className="text-center text-[16px] font-bold mt-0.5">
+          แผนการเรียนรู้ที่ {plan.plan_number}&nbsp;&nbsp;&nbsp;&nbsp;เรื่อง {plan.topic}
+        </p>
 
-        {/* Meta table */}
-        <table className="w-full border-collapse mb-4 text-sm">
-          <tbody>
-            <tr>
-              <td className="border border-gray-400 px-2 py-1 font-semibold bg-gray-50 w-1/4">รายวิชา</td>
-              <td className="border border-gray-400 px-2 py-1 w-1/4">{plan.subject ?? ''}</td>
-              <td className="border border-gray-400 px-2 py-1 font-semibold bg-gray-50 w-1/4">ชั้น</td>
-              <td className="border border-gray-400 px-2 py-1 w-1/4">{plan.grade ?? ''}</td>
-            </tr>
-            <tr>
-              <td className="border border-gray-400 px-2 py-1 font-semibold bg-gray-50">ครูผู้สอน</td>
-              <td className="border border-gray-400 px-2 py-1">{teacher?.name ?? '..............................'}</td>
-              <td className="border border-gray-400 px-2 py-1 font-semibold bg-gray-50">วันที่สอน</td>
-              <td className="border border-gray-400 px-2 py-1">{teachDate}</td>
-            </tr>
-            <tr>
-              <td className="border border-gray-400 px-2 py-1 font-semibold bg-gray-50">หน่วยการเรียนรู้</td>
-              <td className="border border-gray-400 px-2 py-1" colSpan={3}>
-                {mod ? mod.title : '..............................'}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        {/* Meta lines */}
+        <p className="text-[16px] mt-3">
+          รายวิชา&nbsp;&nbsp;&nbsp;&nbsp;{plan.subject ?? ''}&nbsp;&nbsp;&nbsp;&nbsp;ชั้น&nbsp;&nbsp;&nbsp;&nbsp;{plan.grade ?? ''}
+        </p>
+        <p className="text-[16px]">
+          หน่วยการเรียนรู้&nbsp;&nbsp;&nbsp;&nbsp;{mod ? mod.title : '..............................'}
+        </p>
+        <p className="text-[16px] pb-1.5 border-b border-gray-800">
+          ครูผู้สอน&nbsp;&nbsp;&nbsp;&nbsp;{teacher?.name ?? '..............................'}&nbsp;&nbsp;&nbsp;&nbsp;วันที่สอน&nbsp;&nbsp;&nbsp;&nbsp;{teachDate}
+        </p>
 
-        {/* Main plan table */}
-        <table className="w-full border-collapse text-sm">
-          <tbody>
-            <SectionHeader no={1} title="มาตรฐานการเรียนรู้" />
-            <Row label="1.1 ตัวชี้วัดระหว่างทาง" value={plan.indicators_interim} />
-            <Row label="1.2 ตัวชี้วัดปลายทาง" value={plan.indicators_final} />
-
-            <SectionHeader no={2} title="จุดประสงค์การเรียนรู้" />
-            <tr>
-              <td colSpan={2} className="border border-gray-400 px-2 py-1.5 text-sm whitespace-pre-line">
-                {[plan.objectives_k, plan.objectives_p, plan.objectives_a].filter(Boolean).join('\n')}
-              </td>
-            </tr>
-
-            <SectionHeader no={3} title="สาระสำคัญ" />
-            <tr>
-              <td colSpan={2} className="border border-gray-400 px-2 py-1.5 text-sm whitespace-pre-line">
-                {plan.key_content ?? ''}
-              </td>
-            </tr>
-
-            <SectionHeader no={4} title="สมรรถนะสำคัญของผู้เรียน" />
-            <tr>
-              <td colSpan={2} className="border border-gray-400 px-2 py-1.5 text-sm whitespace-pre-line">
-                {plan.competencies ?? ''}
-              </td>
-            </tr>
-
-            <SectionHeader no={5} title="คุณลักษณะอันพึงประสงค์" />
-            <tr>
-              <td colSpan={2} className="border border-gray-400 px-2 py-1.5 text-sm whitespace-pre-line">
-                {plan.desired_traits ?? ''}
-              </td>
-            </tr>
-
-            <SectionHeader no={6} title="กิจกรรมการเรียนรู้" />
-            <tr>
-              <td colSpan={2} className="border border-gray-400 px-2 py-2 text-sm whitespace-pre-line leading-relaxed">
-                {plan.activities ?? ''}
-              </td>
-            </tr>
-
-            <SectionHeader no={7} title="การวัดและประเมินผล" />
-            <tr>
-              <td colSpan={2} className="border border-gray-400 px-2 py-1.5 text-sm whitespace-pre-line">
-                {plan.assessment ?? ''}
-              </td>
-            </tr>
-
-            <SectionHeader no={8} title="สื่อ / แหล่งการเรียนรู้" />
-            <tr>
-              <td colSpan={2} className="border border-gray-400 px-2 py-1.5 text-sm whitespace-pre-line">
-                {plan.materials ?? ''}
-              </td>
-            </tr>
-
-            <SectionHeader no={9} title="บันทึกหลังการจัดการเรียนรู้" />
-            <tr>
-              <td colSpan={2} className="border border-gray-400 px-2 py-8 text-sm text-gray-300">
-                {plan.post_lesson_note || '................................................................................................................'}
-              </td>
-            </tr>
-
-            <SectionHeader no={10} title="ข้อเสนอแนะ" />
-            <tr>
-              <td colSpan={2} className="border border-gray-400 px-2 py-8 text-sm text-gray-300">
-                {plan.suggestion || '................................................................................................................'}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        {/* Sections */}
+        <Section no={1} title="มาตรฐานการเรียนรู้" body={
+          [
+            plan.indicators_interim ? `1.1 ตัวชี้วัดระหว่างทาง\n${plan.indicators_interim}` : null,
+            plan.indicators_final ? `1.2 ตัวชี้วัดปลายทาง\n${plan.indicators_final}` : null,
+          ].filter(Boolean).join('\n\n')
+        } />
+        <Section no={2} title="จุดประสงค์การเรียนรู้" body={[plan.objectives_k, plan.objectives_p, plan.objectives_a].filter(Boolean).join('\n')} />
+        <Section no={3} title="สาระสำคัญ" body={plan.key_content} />
+        <Section no={4} title="สมรรถนะสำคัญของผู้เรียน" body={plan.competencies} />
+        <Section no={5} title="คุณลักษณะอันพึงประสงค์" body={plan.desired_traits} />
+        <Section no={6} title="กิจกรรมการเรียนรู้" body={plan.activities} />
+        <Section no={7} title="การวัดและประเมินผล" body={plan.assessment} />
+        <Section no={8} title="สื่อ / แหล่งการเรียนรู้" body={plan.materials} />
+        <Section no={9} title="บันทึกหลังการจัดการเรียนรู้" body={plan.post_lesson_note} />
+        <Section no={10} title="ข้อเสนอแนะ" body={plan.suggestion} />
 
         {/* Signature block */}
-        <div className="mt-8 flex justify-around text-center text-sm">
+        <div className="mt-10 flex justify-around text-center text-[16px]">
           <div>
             <p className="mb-6">ลงชื่อ ................................................</p>
             <p>( {teacher?.name ?? '......................................'} )</p>
-            <p className="text-gray-500">ครูผู้สอน</p>
+            <p className="text-[14px] text-gray-500">ครูผู้สอน</p>
           </div>
           <div>
             <p className="mb-6">ลงชื่อ ................................................</p>
             <p>( {school?.director_name ?? '......................................'} )</p>
-            <p className="text-gray-500">ผู้อำนวยการ{school?.name ? school.name : 'โรงเรียน'}</p>
+            <p className="text-[14px] text-gray-500">ผู้อำนวยการ{school?.name ?? 'โรงเรียน'}</p>
           </div>
         </div>
       </div>

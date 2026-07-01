@@ -175,6 +175,7 @@ export interface School {
   director_name: string | null
   address: string | null
   phone: string | null
+  logo_path: string | null
   created_at?: string
 }
 
