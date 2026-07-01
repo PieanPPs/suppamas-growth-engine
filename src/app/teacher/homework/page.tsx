@@ -56,7 +56,11 @@ export default function HomeworkPage() {
         supabase.from('students').select('*').eq('school_id', schoolId).order('name'),
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
         supabase.from('homework_tasks').select('*').eq('school_id', schoolId),
-        supabase.from('homework_submissions').select('*').eq('school_id', schoolId),
+        // PostgREST caps unlimited selects at 1000 rows by default -- this table accumulates
+        // one row per student per module per lesson plan and had already silently exceeded
+        // that, causing "existing row" lookups to miss real rows and insert duplicates instead
+        // of updating them. Explicit high limit until this is properly paginated/scoped.
+        supabase.from('homework_submissions').select('*').eq('school_id', schoolId).limit(20000),
         supabase.from('lesson_plans').select('id, module_id, topic, plan_number').eq('school_id', schoolId).order('plan_number'),
       ])
 

@@ -50,7 +50,9 @@ export default function PacingPage() {
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('subject').order('sequence_order', { nullsFirst: false }),
         supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
         supabase.from('homework_tasks').select('*').eq('school_id', schoolId),
-        supabase.from('student_assessments').select('*').eq('school_id', schoolId),
+        // PostgREST caps unlimited selects at 1000 rows -- this table already exceeds that
+        // for this school, which was silently under-counting exit-ticket totals here.
+        supabase.from('student_assessments').select('*').eq('school_id', schoolId).limit(20000),
         supabase.from('students').select('id, class_name').eq('school_id', schoolId),
       ])
 
