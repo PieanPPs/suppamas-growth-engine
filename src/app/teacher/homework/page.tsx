@@ -492,7 +492,7 @@ export default function HomeworkPage() {
           <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-amber-700 flex items-center gap-1">
-                <ClipboardList size={14} /> ภารกิจสัปดาห์นี้
+                <ClipboardList size={14} /> งานวันนี้/สัปดาห์นี้
               </span>
               {!editTask ? (
                 <button onClick={() => setEditTask(true)} className="text-xs text-amber-600 flex items-center gap-1">
@@ -509,7 +509,7 @@ export default function HomeworkPage() {
                 className="w-full mt-1.5 text-sm bg-white border border-amber-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-300"
                 placeholder="เช่น คัดคำควบกล้ำแท้ 10 คำ" />
             ) : (
-              <p className="text-sm text-amber-800 mt-1">{currentTask?.title ?? 'ยังไม่ได้กำหนดภารกิจ'}</p>
+              <p className="text-sm text-amber-800 mt-1">{currentTask?.title ?? 'ยังไม่ได้กำหนดงาน'}</p>
             )}
           </div>
 
