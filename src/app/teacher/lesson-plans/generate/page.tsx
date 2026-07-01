@@ -131,6 +131,7 @@ export default function GenerateLessonPlanPage() {
   const [moduleId, setModuleId] = useState('')
   const [topic, setTopic] = useState('')
   const [duration, setDuration] = useState('1 ชั่วโมง')
+  const [plannedWeek, setPlannedWeek] = useState<number | null>(null)
   const [selectedInds, setSelectedInds] = useState<Set<string>>(new Set())
   const [indTypeTab, setIndTypeTab] = useState<'all' | 'interim' | 'final'>('all')
   const [generatedPrompt, setGeneratedPrompt] = useState('')
@@ -168,6 +169,17 @@ export default function GenerateLessonPlanPage() {
     if (!moduleId) { setIndicators([]); setExistingPlans([]); return }
     const mod = modules.find(m => m.id === moduleId)
     if (!mod) return
+
+    // default the week to ?week= from the URL (e.g. arrived from a specific week on the
+    // pacing page) if it's within this module's span, else the module's own start week
+    const span = Math.max(1, mod.expected_duration_weeks)
+    const minWeek = mod.planned_week
+    const maxWeek = minWeek != null ? minWeek + span - 1 : null
+    const paramWeek = Number(searchParams.get('week'))
+    const validParamWeek = minWeek != null && maxWeek != null && paramWeek >= minWeek && paramWeek <= maxWeek
+      ? paramWeek : null
+    setPlannedWeek(validParamWeek ?? minWeek)
+
     const teacherId = session?.role === 'teacher' && session.userId ? session.userId : null
     Promise.all([
       supabase.from('indicators').select('*').eq('subject', mod.subject).order('sequence_order'),
@@ -239,6 +251,7 @@ export default function GenerateLessonPlanPage() {
       topic: topic.trim(),
       subject: course?.name ?? mod?.subject ?? null,
       grade: course?.grade ?? null,
+      planned_week: plannedWeek,
       teach_dates: null,
       ...parsed,
     }).select().single()
@@ -330,6 +343,26 @@ export default function GenerateLessonPlanPage() {
               ))}
             </select>
           </div>
+
+          {/* Week — which week (within the module's span) this specific topic is taught,
+              so admins looking at week 8 can see exactly which topic that is */}
+          {moduleId && (() => {
+            const mod = modules.find(m => m.id === moduleId)
+            if (!mod?.planned_week) return null
+            const span = Math.max(1, mod.expected_duration_weeks)
+            const weeks = Array.from({ length: span }, (_, i) => mod.planned_week! + i)
+            return (
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-600">
+                  สัปดาห์ที่สอน <span className="text-gray-400">(หน่วยนี้อยู่ในช่วงสัปดาห์ {weeks[0]}–{weeks[weeks.length - 1]})</span>
+                </label>
+                <select value={plannedWeek ?? ''} onChange={e => setPlannedWeek(Number(e.target.value))}
+                  className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-violet-300">
+                  {weeks.map(w => <option key={w} value={w}>สัปดาห์ที่ {w}</option>)}
+                </select>
+              </div>
+            )
+          })()}
 
           {/* Indicators */}
           {indicators.length > 0 && (

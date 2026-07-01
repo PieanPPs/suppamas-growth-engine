@@ -8,7 +8,7 @@ import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
 import {
   Loader2, ChevronLeft, Printer, CalendarDays, Check, Pencil, X,
-  NotebookPen, Save, Send, RotateCcw, CheckCircle2, AlertCircle, Clock,
+  NotebookPen, Save, Send, RotateCcw, CheckCircle2, AlertCircle, Clock, Layers,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -68,6 +68,12 @@ export default function LessonPlanDetailPage() {
   const [savingDate, setSavingDate] = useState(false)
   const [dateSaved, setDateSaved] = useState(false)
 
+  // Which week (within the module's span) this topic is taught
+  const [editingWeek, setEditingWeek] = useState(false)
+  const [weekInput, setWeekInput] = useState<number | null>(null)
+  const [savingWeek, setSavingWeek] = useState(false)
+  const [weekSaved, setWeekSaved] = useState(false)
+
   // Full edit mode
   const [editMode, setEditMode] = useState(false)
   const [draft, setDraft] = useState<DraftPlan>({
@@ -96,6 +102,7 @@ export default function LessonPlanDetailPage() {
       const lp = p as LessonPlan
       setPlan(lp)
       setDateList(lp.teach_dates ?? [])
+      setWeekInput(lp.planned_week)
       setPostNote(lp.post_lesson_note ?? '')
       setSuggestion(lp.suggestion ?? '')
       if (lp.module_id) {
@@ -167,6 +174,18 @@ export default function LessonPlanDetailPage() {
     setEditingDate(false)
     setDateSaved(true)
     setTimeout(() => setDateSaved(false), 2000)
+  }
+
+  async function saveWeek() {
+    if (!plan) return
+    setSavingWeek(true)
+    const { error } = await supabase.from('lesson_plans').update({ planned_week: weekInput }).eq('id', plan.id)
+    setSavingWeek(false)
+    if (error) { alert(`บันทึกสัปดาห์ไม่สำเร็จ: ${error.message}`); return }
+    setPlan(p => p ? { ...p, planned_week: weekInput } : p)
+    setEditingWeek(false)
+    setWeekSaved(true)
+    setTimeout(() => setWeekSaved(false), 2000)
   }
 
   async function savePostLesson() {
@@ -395,6 +414,50 @@ export default function LessonPlanDetailPage() {
         )}
         {dateSaved && <p className="text-xs text-green-600 mt-1">บันทึกแล้ว ✓</p>}
       </div>
+
+      {/* Week — which week within the module's span this specific topic is taught, so
+          admins looking at a given week on the pacing page see exactly this topic there */}
+      {mod?.planned_week != null && (() => {
+        const span = Math.max(1, mod.expected_duration_weeks)
+        const weeks = Array.from({ length: span }, (_, i) => mod.planned_week! + i)
+        return (
+          <div className="bg-white border border-gray-200 rounded-2xl px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Layers size={16} className="text-indigo-500" />
+                <p className="text-sm font-semibold text-gray-700">
+                  สัปดาห์ที่สอน <span className="text-gray-400 font-normal">(หน่วยนี้อยู่ในช่วง {weeks[0]}–{weeks[weeks.length - 1]})</span>
+                </p>
+              </div>
+              {!editingWeek && (
+                <button onClick={() => setEditingWeek(true)}
+                  className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
+                  <Pencil size={11} /> แก้ไข
+                </button>
+              )}
+            </div>
+            {editingWeek ? (
+              <div className="flex gap-2 mt-2">
+                <select value={weekInput ?? ''} onChange={e => setWeekInput(Number(e.target.value))}
+                  className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-300">
+                  {weeks.map(w => <option key={w} value={w}>สัปดาห์ที่ {w}</option>)}
+                </select>
+                <button onClick={saveWeek} disabled={savingWeek}
+                  className="bg-violet-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1 disabled:opacity-50">
+                  {savingWeek ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} บันทึก
+                </button>
+                <button onClick={() => { setEditingWeek(false); setWeekInput(plan.planned_week) }}
+                  className="text-xs text-gray-400 hover:text-gray-600 px-2">ยกเลิก</button>
+              </div>
+            ) : (
+              <p className={`text-sm mt-1 ${plan.planned_week ? 'text-indigo-700 font-semibold' : 'text-amber-500'}`}>
+                {plan.planned_week ? `สัปดาห์ที่ ${plan.planned_week}` : 'ยังไม่ได้ระบุ — กดแก้ไข'}
+              </p>
+            )}
+            {weekSaved && <p className="text-xs text-green-600 mt-1">บันทึกแล้ว ✓</p>}
+          </div>
+        )
+      })()}
 
       {/* Plan sections */}
       <div className="bg-white border border-gray-200 rounded-2xl px-4 py-4 space-y-4 divide-y divide-gray-100">

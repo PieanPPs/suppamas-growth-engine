@@ -228,6 +228,7 @@ export interface LessonPlan {
   topic: string
   subject: string | null
   grade: string | null
+  planned_week: number | null  // which week (within the module's planned_week..+duration span) this specific topic is taught -- lets admins see "week 8 → this topic" instead of every plan showing on every week the module spans
   teach_dates: string[] | null  // each YYYY-MM-DD -- a plan can be taught to different rooms on different days
   indicators_interim: string | null
   indicators_final: string | null

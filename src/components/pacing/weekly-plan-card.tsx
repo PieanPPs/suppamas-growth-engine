@@ -302,7 +302,7 @@ export function WeeklyPlanCard({
               )}
             </span>
             <Link
-              href={`/teacher/lesson-plans/generate?module=${module.id}`}
+              href={`/teacher/lesson-plans/generate?module=${module.id}&week=${selectedWeek}`}
               className="text-[11px] font-semibold text-violet-600 hover:text-violet-800 flex items-center gap-0.5"
             >
               + เพิ่มแผนชั่วโมงใหม่

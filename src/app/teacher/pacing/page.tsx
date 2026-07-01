@@ -43,7 +43,7 @@ export default function PacingPage() {
   const [allStudents, setAllStudents] = useState<Pick<Student, 'id' | 'class_name'>[]>([])
   const [boundRooms, setBoundRooms] = useState<string[]>([])
   const [selectedWeek, setSelectedWeek] = useState(1)
-  const [lessonPlansByModule, setLessonPlansByModule] = useState<Map<string, Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number'>[]>>(new Map())
+  const [lessonPlansByModule, setLessonPlansByModule] = useState<Map<string, Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number' | 'planned_week'>[]>>(new Map())
 
   useEffect(() => {
     async function load() {
@@ -114,7 +114,7 @@ export default function PacingPage() {
 
   useEffect(() => {
     async function loadTeacherData() {
-      type LpRow = Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number'> & { module_id: string | null }
+      type LpRow = Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number' | 'planned_week'> & { module_id: string | null }
       const [pl, pc, lps] = await Promise.all([
         fetchAllPaged<PlanSubmission>(() => {
           const q = supabase.from('plan_submissions').select('*').eq('school_id', schoolId)
@@ -125,7 +125,7 @@ export default function PacingPage() {
           return (teacherId ? q.eq('teacher_id', teacherId) : q).order('id')
         }),
         fetchAllPaged<LpRow>(() => {
-          const q = supabase.from('lesson_plans').select('id, topic, status, plan_number, module_id').eq('school_id', schoolId)
+          const q = supabase.from('lesson_plans').select('id, topic, status, plan_number, planned_week, module_id').eq('school_id', schoolId)
           return (teacherId ? q.eq('teacher_id', teacherId) : q).order('plan_number', { ascending: true }).order('id')
         }),
       ])
@@ -147,7 +147,7 @@ export default function PacingPage() {
       }
 
       // group lesson plans by module_id
-      const byMod = new Map<string, Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number'>[]>()
+      const byMod = new Map<string, Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number' | 'planned_week'>[]>()
       lps.forEach(lp => {
         if (!lp.module_id) return
         const existing = byMod.get(lp.module_id) ?? []
@@ -286,7 +286,15 @@ export default function PacingPage() {
         ) : (
           <div className="grid gap-3 lg:grid-cols-2">
             {grouped.flatMap(g => g.mods).flatMap(m => {
-              const lps = lessonPlansByModule.get(m.id) ?? []
+              const allLps = lessonPlansByModule.get(m.id) ?? []
+              // a plan only shows on the week it's actually scheduled for -- a module can
+              // span several weeks with a different topic each week, so every plan showing
+              // on every week of the module made it impossible to tell which topic is this
+              // week's from the pacing view. Plans with no week set yet (legacy data) fall
+              // back to the module's first week so they don't vanish or duplicate everywhere.
+              const lps = allLps.filter(lp =>
+                lp.planned_week != null ? lp.planned_week === selectedWeek : selectedWeek === m.planned_week
+              )
               const exit = exitByModule.get(m.id)
               const exitSummary = { count: exit?.count ?? 0, total: totalStudents, avg: exit?.avg ?? 0 }
 
