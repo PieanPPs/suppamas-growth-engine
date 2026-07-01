@@ -11,7 +11,7 @@ import { buildPp5Row, PHASE_LABEL, Pp5Row } from '@/lib/pp5'
 import { TRAIT_ITEMS, LEVEL_LABELS } from '@/lib/traits'
 import { Loader2, Printer, ArrowLeft } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
-import { MAX_ROWS } from '@/lib/db'
+import { fetchAllPaged } from '@/lib/db'
 
 export default function Pp5PrintPage() {
   const supabase = createClient()
@@ -34,22 +34,22 @@ export default function Pp5PrintPage() {
       setSubject(subj); setRoom(rm)
 
       const [
-        { data: crs }, { data: stds }, { data: comps }, { data: cs },
-        { data: tst }, { data: tsc }, { data: asm }, { data: mods }, { data: cls }, { data: tr },
+        { data: crs }, { data: stds }, { data: comps }, cs,
+        { data: tst }, tsc, asm, { data: mods }, { data: cls }, tr,
       ] = await Promise.all([
         supabase.from('courses').select('*').eq('school_id', schoolId).eq('subject_key', subj).single(),
         supabase.from('students').select('*').eq('school_id', schoolId).order('student_number'),
         supabase.from('score_components').select('*').eq('school_id', schoolId).eq('subject', subj).order('sequence_order'),
-        supabase.from('component_scores').select('*').limit(MAX_ROWS),
+        fetchAllPaged<ComponentScore>(() => supabase.from('component_scores').select('*').order('id')),
         supabase.from('tests').select('*').eq('school_id', schoolId),
-        supabase.from('test_scores').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
-        supabase.from('student_assessments').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+        fetchAllPaged<TestScore>(() => supabase.from('test_scores').select('*').eq('school_id', schoolId).order('id')),
+        fetchAllPaged<StudentAssessment>(() => supabase.from('student_assessments').select('*').eq('school_id', schoolId).order('id')),
         supabase.from('curriculum_modules').select('id, subject').eq('school_id', schoolId),
         rm ? supabase.from('classrooms').select('*').eq('school_id', schoolId).eq('name', rm).single() : Promise.resolve({ data: null }),
-        supabase.from('trait_ratings').select('*').eq('school_id', schoolId).eq('subject', subj).limit(MAX_ROWS),
+        fetchAllPaged<TraitRating>(() => supabase.from('trait_ratings').select('*').eq('school_id', schoolId).eq('subject', subj).order('id')),
       ])
 
-      setTraits((tr ?? []) as TraitRating[])
+      setTraits(tr)
       setCourse(crs)
       setClassroom(cls as Classroom | null)
       const list = ((stds ?? []) as Student[]).filter(s => !rm || s.class_name === rm)

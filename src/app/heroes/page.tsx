@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { Student, StudentAssessment, HomeworkSubmission } from '@/lib/types'
 import { computeHeroScores } from '@/lib/gamification'
-import { MAX_ROWS } from '@/lib/db'
+import { fetchAllPaged } from '@/lib/db'
 import { RoomFilter, readStoredRoom, storeRoom } from '@/components/room-filter'
 import { Loader2, Trophy, Star, Heart, BookCheck, Smile } from 'lucide-react'
 
@@ -22,14 +22,14 @@ export default function HeroesPage() {
 
   useEffect(() => {
     async function load() {
-      const [{ data: st }, { data: asm }, { data: hw }] = await Promise.all([
+      const [{ data: st }, asm, hw] = await Promise.all([
         supabase.from('students').select('*'),
-        supabase.from('student_assessments').select('*').limit(MAX_ROWS),
-        supabase.from('homework_submissions').select('*').limit(MAX_ROWS),
+        fetchAllPaged<StudentAssessment>(() => supabase.from('student_assessments').select('*').order('id')),
+        fetchAllPaged<HomeworkSubmission>(() => supabase.from('homework_submissions').select('*').order('id')),
       ])
       setStudents((st ?? []) as Student[])
-      setAssessments((asm ?? []) as StudentAssessment[])
-      setHomework((hw ?? []) as HomeworkSubmission[])
+      setAssessments(asm)
+      setHomework(hw)
       setLoading(false)
     }
     load()

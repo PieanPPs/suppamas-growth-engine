@@ -22,7 +22,7 @@ import {
 } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
-import { MAX_ROWS } from '@/lib/db'
+import { fetchAllPaged } from '@/lib/db'
 
 const TEACHER_KEY = 'sge_teacher_id'
 
@@ -69,27 +69,28 @@ export default function Pp5Page() {
   async function loadAll() {
     const [
       { data: ts }, { data: crs }, { data: stds }, { data: mods },
-      { data: asm }, { data: tst }, { data: tsc }, { data: comps }, { data: cs },
-      { data: hw }, { data: tr }, { data: att },
+      asm, { data: tst }, tsc, { data: comps }, cs,
+      hw, tr, att,
     ] = await Promise.all([
       supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('courses').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('students').select('*').eq('school_id', schoolId).order('class_name').order('student_number'),
       supabase.from('curriculum_modules').select('id, subject').eq('school_id', schoolId),
-      supabase.from('student_assessments').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+      // page through — these tables exceed Supabase's 1000-row-per-request cap
+      fetchAllPaged<StudentAssessment>(() => supabase.from('student_assessments').select('*').eq('school_id', schoolId).order('id')),
       supabase.from('tests').select('*').eq('school_id', schoolId).order('test_date'),
-      supabase.from('test_scores').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+      fetchAllPaged<TestScore>(() => supabase.from('test_scores').select('*').eq('school_id', schoolId).order('id')),
       supabase.from('score_components').select('*').eq('school_id', schoolId).order('sequence_order'),
-      supabase.from('component_scores').select('*').limit(MAX_ROWS),
-      supabase.from('homework_submissions').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
-      supabase.from('trait_ratings').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
-      supabase.from('attendance').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+      fetchAllPaged<ComponentScore>(() => supabase.from('component_scores').select('*').order('id')),
+      fetchAllPaged<HomeworkSubmission>(() => supabase.from('homework_submissions').select('*').eq('school_id', schoolId).order('id')),
+      fetchAllPaged<TraitRating>(() => supabase.from('trait_ratings').select('*').eq('school_id', schoolId).order('id')),
+      fetchAllPaged<AttendanceRecord>(() => supabase.from('attendance').select('*').eq('school_id', schoolId).order('id')),
     ])
     setTeachers(ts ?? []); setCourses(crs ?? []); setStudents(stds ?? [])
     setModules((mods ?? []) as CurriculumModule[])
-    setAssessments(asm ?? []); setTests(tst ?? []); setTestScores(tsc ?? [])
-    setComponents(comps ?? []); setSavedScores(cs ?? [])
-    setHomework(hw ?? []); setTraitRatings(tr ?? []); setAttendanceRows(att ?? [])
+    setAssessments(asm); setTests(tst ?? []); setTestScores(tsc)
+    setComponents(comps ?? []); setSavedScores(cs)
+    setHomework(hw); setTraitRatings(tr); setAttendanceRows(att)
     const session = getSession()
     const isTeacher = session?.role === 'teacher'
     setIsTeacherRole(isTeacher)
@@ -223,8 +224,8 @@ export default function Pp5Page() {
     if (rowsToSave.length > 0) {
       await supabase.from('trait_ratings').upsert(rowsToSave, { onConflict: 'school_id,student_id,subject,kind,item_no' })
     }
-    const { data } = await supabase.from('trait_ratings').select('*').eq('school_id', schoolId).limit(MAX_ROWS)
-    setTraitRatings(data ?? [])
+    const data = await fetchAllPaged<TraitRating>(() => supabase.from('trait_ratings').select('*').eq('school_id', schoolId).order('id'))
+    setTraitRatings(data)
     setSaving(false)
     setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2000)
   }
@@ -286,8 +287,8 @@ export default function Pp5Page() {
     if (rowsToSave.length > 0) {
       await supabase.from('component_scores').upsert(rowsToSave, { onConflict: 'component_id,student_id' })
     }
-    const { data } = await supabase.from('component_scores').select('*').limit(MAX_ROWS)
-    setSavedScores(data ?? [])
+    const data = await fetchAllPaged<ComponentScore>(() => supabase.from('component_scores').select('*').order('id'))
+    setSavedScores(data)
     setSaving(false)
     setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2000)
   }

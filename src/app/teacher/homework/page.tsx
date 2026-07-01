@@ -14,7 +14,7 @@ import { QrScanner } from '@/components/qr-scanner'
 import { RoomFilter, readStoredRoom, storeRoom } from '@/components/room-filter'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
-import { MAX_ROWS } from '@/lib/db'
+import { fetchAllPaged } from '@/lib/db'
 
 const STATUS: Record<HomeworkStatus, { label: string; on: string; icon: React.ReactNode }> = {
   On_Time: { label: 'ตรงเวลา', on: 'bg-green-500 text-white', icon: <CheckCircle2 size={16} /> },
@@ -53,11 +53,13 @@ export default function HomeworkPage() {
 
   useEffect(() => {
     async function load() {
-      const [{ data: st }, { data: mods }, { data: tk }, { data: subsData }, { data: lps }] = await Promise.all([
+      const [{ data: st }, { data: mods }, { data: tk }, subsData, { data: lps }] = await Promise.all([
         supabase.from('students').select('*').eq('school_id', schoolId).order('name'),
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
         supabase.from('homework_tasks').select('*').eq('school_id', schoolId),
-        supabase.from('homework_submissions').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+        // must page through — this table exceeds Supabase's 1000-row-per-request cap
+        fetchAllPaged<HomeworkSubmission>(() =>
+          supabase.from('homework_submissions').select('*').eq('school_id', schoolId).order('id')),
         supabase.from('lesson_plans').select('id, module_id, topic, plan_number').eq('school_id', schoolId).order('plan_number'),
       ])
 
@@ -84,7 +86,7 @@ export default function HomeworkPage() {
       setModules(visibleMods)
       setLessonPlans(lessonPlanList)
       setTasks(new Map((tk ?? []).map((t: HomeworkTask) => [taskKey(t.module_id, t.lesson_plan_id), t])))
-      setAllSubs(subsData ?? [])
+      setAllSubs(subsData)
       if (visibleMods[0]) {
         setSelectedModule(visibleMods[0].id)
         const firstLp = lessonPlanList

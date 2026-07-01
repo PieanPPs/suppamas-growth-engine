@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Student, StudentAssessment } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { average } from '@/lib/analytics'
-import { MAX_ROWS } from '@/lib/db'
+import { fetchAllPaged } from '@/lib/db'
 import { RoomFilter } from '@/components/room-filter'
 import { Loader2, ChevronRight, User } from 'lucide-react'
 
@@ -20,13 +20,13 @@ export default function StudentsPage() {
 
   useEffect(() => {
     async function load() {
-      const [{ data: students }, { data: assessments }] = await Promise.all([
+      const [{ data: students }, assessments] = await Promise.all([
         supabase.from('students').select('*').order('name'),
-        supabase.from('student_assessments').select('*').limit(MAX_ROWS),
+        fetchAllPaged<StudentAssessment>(() => supabase.from('student_assessments').select('*').order('id')),
       ])
 
       const byStudent = new Map<string, StudentAssessment[]>()
-      assessments?.forEach(a => {
+      assessments.forEach(a => {
         if (!byStudent.has(a.student_id)) byStudent.set(a.student_id, [])
         byStudent.get(a.student_id)!.push(a)
       })

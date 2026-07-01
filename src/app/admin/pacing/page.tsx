@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { getSchoolId } from '@/lib/school'
-import { MAX_ROWS } from '@/lib/db'
+import { fetchAllPaged } from '@/lib/db'
 import {
   CurriculumModule, PacingLog, StudentAssessment, PlanSubmission, AcademicSettings,
   Indicator, ModuleIndicator, Test, TestScore,
@@ -40,19 +40,19 @@ export default function CrossTrackingPage() {
   useEffect(() => {
     async function load() {
       const [
-        { data: modules }, { data: pacings }, { data: assessments },
-        { data: plans }, { data: settings }, { data: indicators }, { data: moduleIndicators },
-        { data: tests }, { data: testScores },
+        { data: modules }, pacings, assessments,
+        plans, { data: settings }, { data: indicators }, { data: moduleIndicators },
+        { data: tests }, testScores,
       ] = await Promise.all([
         supabase.from('curriculum_modules').select('*').order('subject').order('sequence_order', { nullsFirst: false }),
-        supabase.from('pacing_logs').select('*').limit(MAX_ROWS),
-        supabase.from('student_assessments').select('*').limit(MAX_ROWS),
-        supabase.from('plan_submissions').select('*').limit(MAX_ROWS),
+        fetchAllPaged<PacingLog>(() => supabase.from('pacing_logs').select('*').order('id')),
+        fetchAllPaged<StudentAssessment>(() => supabase.from('student_assessments').select('*').order('id')),
+        fetchAllPaged<PlanSubmission>(() => supabase.from('plan_submissions').select('*').order('id')),
         supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
         supabase.from('indicators').select('*'),
         supabase.from('module_indicators').select('*'),
         supabase.from('tests').select('*'),
-        supabase.from('test_scores').select('*').limit(MAX_ROWS),
+        fetchAllPaged<TestScore>(() => supabase.from('test_scores').select('*').order('id')),
       ])
 
       const week = settings ? currentAcademicWeek((settings as AcademicSettings).term_start_date) : 0

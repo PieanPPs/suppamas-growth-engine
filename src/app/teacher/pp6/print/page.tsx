@@ -13,7 +13,7 @@ import { TRAIT_ITEMS, LEVEL_LABELS } from '@/lib/traits'
 import { buildStudentTagScores } from '@/lib/analytics'
 import { Loader2, Printer, ArrowLeft } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
-import { MAX_ROWS } from '@/lib/db'
+import { fetchAllPaged } from '@/lib/db'
 
 export default function Pp6PrintPage() {
   const supabase = createClient()
@@ -39,21 +39,21 @@ export default function Pp6PrintPage() {
     async function load() {
       const params = new URLSearchParams(window.location.search)
       const [
-        { data: stds }, { data: crs }, { data: comps }, { data: cs },
-        { data: tst }, { data: tsc }, { data: asm }, { data: mods },
-        { data: hw }, { data: tr }, { data: att }, { data: st },
+        { data: stds }, { data: crs }, { data: comps }, cs,
+        { data: tst }, tsc, asm, { data: mods },
+        hw, tr, att, { data: st },
       ] = await Promise.all([
         supabase.from('students').select('*').eq('school_id', schoolId).order('student_number'),
         supabase.from('courses').select('*').eq('school_id', schoolId).order('name'),
         supabase.from('score_components').select('*').eq('school_id', schoolId).order('sequence_order'),
-        supabase.from('component_scores').select('*').limit(MAX_ROWS),
+        fetchAllPaged<ComponentScore>(() => supabase.from('component_scores').select('*').order('id')),
         supabase.from('tests').select('*').eq('school_id', schoolId),
-        supabase.from('test_scores').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
-        supabase.from('student_assessments').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+        fetchAllPaged<TestScore>(() => supabase.from('test_scores').select('*').eq('school_id', schoolId).order('id')),
+        fetchAllPaged<StudentAssessment>(() => supabase.from('student_assessments').select('*').eq('school_id', schoolId).order('id')),
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId),
-        supabase.from('homework_submissions').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
-        supabase.from('trait_ratings').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
-        supabase.from('attendance').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+        fetchAllPaged<HomeworkSubmission>(() => supabase.from('homework_submissions').select('*').eq('school_id', schoolId).order('id')),
+        fetchAllPaged<TraitRating>(() => supabase.from('trait_ratings').select('*').eq('school_id', schoolId).order('id')),
+        fetchAllPaged<AttendanceRecord>(() => supabase.from('attendance').select('*').eq('school_id', schoolId).order('id')),
         supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
       ])
       const allStudents = (stds ?? []) as Student[]
@@ -64,10 +64,10 @@ export default function Pp6PrintPage() {
       setRoom(rm)
 
       setStudents(allStudents)
-      setCourses(crs ?? []); setComponents(comps ?? []); setComponentScores(cs ?? [])
-      setTests(tst ?? []); setTestScores(tsc ?? []); setAssessments(asm ?? [])
+      setCourses(crs ?? []); setComponents(comps ?? []); setComponentScores(cs)
+      setTests(tst ?? []); setTestScores(tsc); setAssessments(asm)
       setModules((mods ?? []) as CurriculumModule[])
-      setHomework(hw ?? []); setTraits(tr ?? []); setAttendance(att ?? [])
+      setHomework(hw); setTraits(tr); setAttendance(att)
       setSettings(st as AcademicSettings | null)
 
       if (rm) {

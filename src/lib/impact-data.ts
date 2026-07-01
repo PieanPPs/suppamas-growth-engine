@@ -1,6 +1,6 @@
 import { createClient } from './supabase/client'
 import { getSchoolId } from './school'
-import { MAX_ROWS } from './db'
+import { fetchAllPaged } from './db'
 import {
   StudentAssessment, HomeworkSubmission, PacingLog, PlanSubmission,
   CurriculumModule, AcademicSettings, Indicator, ModuleIndicator,
@@ -37,14 +37,15 @@ export async function loadImpact(): Promise<ImpactData> {
   const supabase = createClient()
   const schoolId = getSchoolId()
   const [
-    { data: assessments }, { data: homework }, { data: pacings }, { data: plans },
+    assessments, homework, pacings, plans,
     { data: modules }, { data: settings }, { data: students }, { data: teachers },
     { data: classrooms }, { data: indicators }, { data: moduleIndicators },
   ] = await Promise.all([
-    supabase.from('student_assessments').select('*').limit(MAX_ROWS),
-    supabase.from('homework_submissions').select('*').limit(MAX_ROWS),
-    supabase.from('pacing_logs').select('*').limit(MAX_ROWS),
-    supabase.from('plan_submissions').select('*').limit(MAX_ROWS),
+    // page through — these tables exceed Supabase's 1000-row-per-request cap
+    fetchAllPaged<StudentAssessment>(() => supabase.from('student_assessments').select('*').order('id')),
+    fetchAllPaged<HomeworkSubmission>(() => supabase.from('homework_submissions').select('*').order('id')),
+    fetchAllPaged<PacingLog>(() => supabase.from('pacing_logs').select('*').order('id')),
+    fetchAllPaged<PlanSubmission>(() => supabase.from('plan_submissions').select('*').order('id')),
     supabase.from('curriculum_modules').select('*'),
     supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
     supabase.from('students').select('id'),

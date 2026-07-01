@@ -20,7 +20,7 @@ import Link from 'next/link'
 import { Loader2, UserCircle2, ChevronDown, CalendarX2, BookPlus } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
-import { MAX_ROWS } from '@/lib/db'
+import { fetchAllPaged } from '@/lib/db'
 
 const TEACHER_KEY = 'sge_teacher_id'
 
@@ -46,12 +46,14 @@ export default function PacingPage() {
 
   useEffect(() => {
     async function load() {
-      const [{ data: s }, { data: mods }, { data: ts }, { data: tasks }, { data: assessments }, { data: students }] = await Promise.all([
+      const [{ data: s }, { data: mods }, { data: ts }, { data: tasks }, assessments, { data: students }] = await Promise.all([
         supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('subject').order('sequence_order', { nullsFirst: false }),
         supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
         supabase.from('homework_tasks').select('*').eq('school_id', schoolId),
-        supabase.from('student_assessments').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+        // must page through — this table exceeds Supabase's 1000-row-per-request cap
+        fetchAllPaged<StudentAssessment>(() =>
+          supabase.from('student_assessments').select('*').eq('school_id', schoolId).order('id')),
         supabase.from('students').select('id, class_name').eq('school_id', schoolId),
       ])
 
@@ -111,21 +113,23 @@ export default function PacingPage() {
 
   useEffect(() => {
     async function loadTeacherData() {
-      let plQ = supabase.from('plan_submissions').select('*').eq('school_id', schoolId).limit(MAX_ROWS)
-      let pcQ = supabase.from('pacing_logs').select('*').eq('school_id', schoolId).limit(MAX_ROWS)
-      let lpQ = supabase.from('lesson_plans')
-        .select('id, topic, status, plan_number, module_id')
-        .eq('school_id', schoolId)
-        .order('plan_number', { ascending: true })
-        .limit(MAX_ROWS)
-      if (teacherId) {
-        plQ = plQ.eq('teacher_id', teacherId)
-        pcQ = pcQ.eq('teacher_id', teacherId)
-        lpQ = lpQ.eq('teacher_id', teacherId)
-      }
-      const [{ data: pl }, { data: pc }, { data: lps }] = await Promise.all([plQ, pcQ, lpQ])
-      setPlans(new Map((pl ?? []).map((p: PlanSubmission) => [p.module_id, p])))
-      setPacings(latestPacingByModule((pc ?? []) as PacingLog[]))
+      type LpRow = Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number'> & { module_id: string | null }
+      const [pl, pc, lps] = await Promise.all([
+        fetchAllPaged<PlanSubmission>(() => {
+          const q = supabase.from('plan_submissions').select('*').eq('school_id', schoolId)
+          return (teacherId ? q.eq('teacher_id', teacherId) : q).order('id')
+        }),
+        fetchAllPaged<PacingLog>(() => {
+          const q = supabase.from('pacing_logs').select('*').eq('school_id', schoolId)
+          return (teacherId ? q.eq('teacher_id', teacherId) : q).order('id')
+        }),
+        fetchAllPaged<LpRow>(() => {
+          const q = supabase.from('lesson_plans').select('id, topic, status, plan_number, module_id').eq('school_id', schoolId)
+          return (teacherId ? q.eq('teacher_id', teacherId) : q).order('plan_number', { ascending: true }).order('id')
+        }),
+      ])
+      setPlans(new Map(pl.map((p: PlanSubmission) => [p.module_id, p])))
+      setPacings(latestPacingByModule(pc))
 
       // rooms bound to this teacher — exit-ticket totals should count only these students
       if (teacherId) {
@@ -141,9 +145,8 @@ export default function PacingPage() {
       }
 
       // group lesson plans by module_id
-      type LpSlim = Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number'> & { module_id: string | null }
       const byMod = new Map<string, Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number'>[]>()
-      ;((lps ?? []) as LpSlim[]).forEach(lp => {
+      lps.forEach(lp => {
         if (!lp.module_id) return
         const existing = byMod.get(lp.module_id) ?? []
         byMod.set(lp.module_id, [...existing, lp])

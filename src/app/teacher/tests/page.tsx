@@ -10,7 +10,7 @@ import { ScoreModeSwitch } from '@/components/score-mode-switch'
 import { RoomFilter, readStoredRoom, storeRoom } from '@/components/room-filter'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
-import { MAX_ROWS } from '@/lib/db'
+import { fetchAllPaged } from '@/lib/db'
 import { PromptKit } from '@/components/tests/prompt-kit'
 import { ImportItems } from '@/components/tests/import-items'
 import { ParsedExamItem } from '@/lib/exam-import'
@@ -70,20 +70,20 @@ export default function TestsPage() {
   const [savedFlash, setSavedFlash] = useState(false)
 
   async function loadAll() {
-    const [{ data: ts }, { data: crs }, { data: inds }, { data: stds }, { data: tst }, { data: ti }, { data: sc }, { data: items }, { data: resp }] = await Promise.all([
+    const [{ data: ts }, { data: crs }, { data: inds }, { data: stds }, { data: tst }, { data: ti }, sc, items, resp] = await Promise.all([
       supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('courses').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('indicators').select('*').eq('school_id', schoolId).order('standard').order('sequence_order'),
       supabase.from('students').select('*').eq('school_id', schoolId).order('class_name').order('student_number'),
       supabase.from('tests').select('*').eq('school_id', schoolId).order('test_date', { ascending: false }),
       supabase.from('test_indicators').select('*'),
-      supabase.from('test_scores').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
-      supabase.from('test_items').select('*').order('item_no').limit(MAX_ROWS),
-      supabase.from('test_item_responses').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+      fetchAllPaged<TestScore>(() => supabase.from('test_scores').select('*').eq('school_id', schoolId).order('id')),
+      fetchAllPaged<TestItem>(() => supabase.from('test_items').select('*').order('id')),
+      fetchAllPaged<TestItemResponse>(() => supabase.from('test_item_responses').select('*').eq('school_id', schoolId).order('id')),
     ])
     setTeachers(ts ?? []); setCourses(crs ?? []); setIndicators(inds ?? [])
-    setStudents(stds ?? []); setTests(tst ?? []); setTestIndicators(ti ?? []); setAllScores(sc ?? [])
-    setTestItems(items ?? []); setAllResponses(resp ?? [])
+    setStudents(stds ?? []); setTests(tst ?? []); setTestIndicators(ti ?? []); setAllScores(sc)
+    setTestItems(items); setAllResponses(resp)
     const session = getSession()
     const isTeacher = session?.role === 'teacher'
     setIsTeacherRole(isTeacher)
@@ -186,8 +186,8 @@ export default function TestsPage() {
     if (rows.length > 0) {
       await supabase.from('test_scores').upsert(rows, { onConflict: 'test_id,student_id' })
     }
-    const { data: sc } = await supabase.from('test_scores').select('*').eq('school_id', schoolId).limit(MAX_ROWS)
-    setAllScores(sc ?? [])
+    const sc = await fetchAllPaged<TestScore>(() => supabase.from('test_scores').select('*').eq('school_id', schoolId).order('id'))
+    setAllScores(sc)
     setSaving(false)
     setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2000)
   }

@@ -1,6 +1,28 @@
-// PostgREST caps unbounded SELECTs at 1000 rows by default. Several tables in this app
-// grow one row per student per module/lesson/day/test and silently crossed that cap,
-// which corrupted "does a row already exist" checks (causing duplicate inserts) and
-// under-counted analytics. Any school-wide read of a growth table must pass an explicit
-// high limit. 100k comfortably covers a single school across multiple academic years.
-export const MAX_ROWS = 100000
+// Supabase / PostgREST hard-caps EVERY request at 1000 rows server-side (the `max-rows`
+// setting), and this cap overrides any client-side `.limit()` — a `.limit(100000)` still
+// returns only the first 1000 rows. The only way to read a table that can exceed 1000 rows
+// is to page through it with `.range()` until a short page comes back. Several tables here
+// grow one row per student per module/lesson/day/test and have already crossed 1000, which
+// silently truncated reads — corrupting "does this row exist" checks and analytics totals.
+export const PAGE_SIZE = 1000
+
+// Minimal shape of a Supabase query that still needs a range applied. `makeQuery` must build
+// a FRESH query on each call, because a PostgREST builder can only be awaited once.
+type RangeableQuery<T> = {
+  range: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+}
+
+/** Fetch every row of a query by paging in blocks of PAGE_SIZE. Throws on the first error. */
+export async function fetchAllPaged<T>(makeQuery: () => RangeableQuery<T>): Promise<T[]> {
+  const all: T[] = []
+  let from = 0
+  for (;;) {
+    const { data, error } = await makeQuery().range(from, from + PAGE_SIZE - 1)
+    if (error) throw new Error(error.message)
+    const chunk = data ?? []
+    all.push(...chunk)
+    if (chunk.length < PAGE_SIZE) break
+    from += PAGE_SIZE
+  }
+  return all
+}
