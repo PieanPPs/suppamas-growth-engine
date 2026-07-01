@@ -189,7 +189,7 @@ export default function HomeworkPage() {
     ])
 
     let error: string | null = null
-    if (existing) {
+    if (existing?.id) {
       const { error: err } = await supabase.from('homework_submissions').update({ status }).eq('id', existing.id)
       error = err?.message ?? null
     } else {
@@ -235,25 +235,39 @@ export default function HomeworkPage() {
       })),
     ])
     const results = await Promise.all(visibleStudents.map(async s => {
+      // treat an existing row with no real id (e.g. a prior bulk-insert that never
+      // got its id patched back) as "not existing" -- an update against id: '' would
+      // match zero rows and silently no-op instead of ever persisting the change
       const existing = existingByStudent.get(s.id)
-      if (existing) {
+      if (existing?.id) {
         const { error } = await supabase.from('homework_submissions').update({ status: 'On_Time' }).eq('id', existing.id)
-        return { studentId: s.id, error: error?.message ?? null }
+        return { studentId: s.id, recordId: existing.id, error: error?.message ?? null }
       }
-      const { error } = await supabase.from('homework_submissions')
+      const { data, error } = await supabase.from('homework_submissions')
         .insert({ school_id: schoolId, student_id: s.id, module_id: selectedModule, lesson_plan_id: selectedLessonPlanId, status: 'On_Time' })
-      return { studentId: s.id, error: error?.message ?? null }
+        .select().single()
+      return { studentId: s.id, recordId: data?.id ?? null, error: error?.message ?? null }
     }))
 
+    const succeeded = results.filter(r => !r.error)
     const failed = results.filter(r => r.error)
+
+    // patch in the real row id for anyone freshly inserted, so a later individual
+    // tap or bulk-send doesn't try to "update" a row that was never actually found
+    setAllSubs(prev => prev.map(s => {
+      if (!(s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId)) return s
+      const ok = succeeded.find(r => r.studentId === s.student_id)
+      return ok && ok.recordId ? { ...s, id: ok.recordId } : s
+    }))
+
     if (failed.length > 0) {
       // revert the students whose save actually failed back to their prior (or unset) status
       setAllSubs(prev => prev
-        .filter(s => !(failed.some(f => f.studentId === s.student_id) && s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId && !existingByStudent.get(s.student_id)))
+        .filter(s => !(failed.some(f => f.studentId === s.student_id) && s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId && !existingByStudent.get(s.student_id)?.id))
         .map(s => {
           const wasFailed = failed.some(f => f.studentId === s.student_id) && s.module_id === selectedModule && (s.lesson_plan_id ?? null) === selectedLessonPlanId
           const prior = existingByStudent.get(s.student_id)
-          return wasFailed && prior ? { ...s, status: prior.status } : s
+          return wasFailed && prior?.id ? { ...s, status: prior.status } : s
         }))
       alert(`บันทึกไม่สำเร็จ ${failed.length} คน: ${failed[0].error}`)
     }
