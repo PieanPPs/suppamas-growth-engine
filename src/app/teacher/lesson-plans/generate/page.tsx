@@ -112,6 +112,7 @@ export default function GenerateLessonPlanPage() {
   const [topic, setTopic] = useState('')
   const [duration, setDuration] = useState('1 ชั่วโมง')
   const [selectedInds, setSelectedInds] = useState<Set<string>>(new Set())
+  const [indTypeTab, setIndTypeTab] = useState<'all' | 'interim' | 'final'>('all')
   const [generatedPrompt, setGeneratedPrompt] = useState('')
   const [copied, setCopied] = useState(false)
 
@@ -312,21 +313,60 @@ export default function GenerateLessonPlanPage() {
 
           {/* Indicators */}
           {indicators.length > 0 && (
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label className="text-xs font-semibold text-gray-600">
                 ตัวชี้วัด <span className="text-gray-400">(เลือกที่เกี่ยวข้อง)</span>
               </label>
-              <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 max-h-52 overflow-y-auto">
-                {indicators.map(ind => (
-                  <label key={ind.id} className="flex items-start gap-2.5 px-3 py-2 cursor-pointer hover:bg-gray-50">
-                    <input type="checkbox" checked={selectedInds.has(ind.id)} onChange={() => { toggleInd(ind.id); setGeneratedPrompt('') }}
-                      className="mt-0.5 accent-violet-600 flex-shrink-0" />
-                    <div>
-                      <span className="text-[10px] font-semibold text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded">{ind.code}</span>
-                      <p className="text-xs text-gray-700 mt-0.5">{ind.description}</p>
-                    </div>
-                  </label>
+
+              {/* interim / final tab filter */}
+              <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+                {([
+                  ['all', `ทั้งหมด (${indicators.length})`],
+                  ['interim', `ระหว่างทาง (${indicators.filter(i => i.type === 'interim').length})`],
+                  ['final', `ปลายทาง (${indicators.filter(i => i.type === 'final').length})`],
+                ] as const).map(([t, label]) => (
+                  <button key={t} type="button" onClick={() => setIndTypeTab(t)}
+                    className={`flex-1 text-xs font-semibold py-1.5 rounded-lg transition-all ${indTypeTab === t ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'}`}>
+                    {label}
+                  </button>
                 ))}
+              </div>
+
+              <div className="border border-gray-200 rounded-xl max-h-64 overflow-y-auto">
+                {Array.from(
+                  indicators
+                    .filter(i => indTypeTab === 'all' || i.type === indTypeTab)
+                    .reduce((map, ind) => {
+                      const key = ind.strand || 'ไม่ระบุสาระการเรียนรู้'
+                      if (!map.has(key)) map.set(key, [])
+                      map.get(key)!.push(ind)
+                      return map
+                    }, new Map<string, Indicator[]>())
+                ).map(([strand, inds]) => (
+                  <div key={strand} className="border-b border-gray-100 last:border-b-0">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide px-3 pt-2">{strand}</p>
+                    <div className="divide-y divide-gray-100">
+                      {inds.map(ind => (
+                        <label key={ind.id} className="flex items-start gap-2.5 px-3 py-2 cursor-pointer hover:bg-gray-50">
+                          <input type="checkbox" checked={selectedInds.has(ind.id)} onChange={() => { toggleInd(ind.id); setGeneratedPrompt('') }}
+                            className="mt-0.5 accent-violet-600 flex-shrink-0" />
+                          <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] font-semibold text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded">{ind.code}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${ind.type === 'interim' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}>
+                                {ind.type === 'interim' ? 'ระหว่างทาง' : 'ปลายทาง'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-700 mt-0.5">{ind.description}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {indicators.filter(i => indTypeTab === 'all' || i.type === indTypeTab).length === 0 && (
+                  <p className="text-xs text-gray-400 text-center py-4">ไม่มีตัวชี้วัดในหมวดนี้</p>
+                )}
               </div>
             </div>
           )}
