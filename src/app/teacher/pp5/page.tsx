@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
+import { MAX_ROWS } from '@/lib/db'
 
 const TEACHER_KEY = 'sge_teacher_id'
 
@@ -75,14 +76,14 @@ export default function Pp5Page() {
       supabase.from('courses').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('students').select('*').eq('school_id', schoolId).order('class_name').order('student_number'),
       supabase.from('curriculum_modules').select('id, subject').eq('school_id', schoolId),
-      supabase.from('student_assessments').select('*').eq('school_id', schoolId),
+      supabase.from('student_assessments').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
       supabase.from('tests').select('*').eq('school_id', schoolId).order('test_date'),
-      supabase.from('test_scores').select('*').eq('school_id', schoolId),
+      supabase.from('test_scores').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
       supabase.from('score_components').select('*').eq('school_id', schoolId).order('sequence_order'),
-      supabase.from('component_scores').select('*'),
-      supabase.from('homework_submissions').select('*').eq('school_id', schoolId),
-      supabase.from('trait_ratings').select('*').eq('school_id', schoolId),
-      supabase.from('attendance').select('*').eq('school_id', schoolId),
+      supabase.from('component_scores').select('*').limit(MAX_ROWS),
+      supabase.from('homework_submissions').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+      supabase.from('trait_ratings').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+      supabase.from('attendance').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
     ])
     setTeachers(ts ?? []); setCourses(crs ?? []); setStudents(stds ?? [])
     setModules((mods ?? []) as CurriculumModule[])
@@ -222,7 +223,7 @@ export default function Pp5Page() {
     if (rowsToSave.length > 0) {
       await supabase.from('trait_ratings').upsert(rowsToSave, { onConflict: 'school_id,student_id,subject,kind,item_no' })
     }
-    const { data } = await supabase.from('trait_ratings').select('*').eq('school_id', schoolId)
+    const { data } = await supabase.from('trait_ratings').select('*').eq('school_id', schoolId).limit(MAX_ROWS)
     setTraitRatings(data ?? [])
     setSaving(false)
     setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2000)
@@ -285,7 +286,7 @@ export default function Pp5Page() {
     if (rowsToSave.length > 0) {
       await supabase.from('component_scores').upsert(rowsToSave, { onConflict: 'component_id,student_id' })
     }
-    const { data } = await supabase.from('component_scores').select('*')
+    const { data } = await supabase.from('component_scores').select('*').limit(MAX_ROWS)
     setSavedScores(data ?? [])
     setSaving(false)
     setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2000)

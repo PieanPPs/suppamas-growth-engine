@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Student, StudentAssessment } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { average } from '@/lib/analytics'
+import { MAX_ROWS } from '@/lib/db'
 import { RoomFilter } from '@/components/room-filter'
 import { Loader2, ChevronRight, User } from 'lucide-react'
 
@@ -21,7 +22,7 @@ export default function StudentsPage() {
     async function load() {
       const [{ data: students }, { data: assessments }] = await Promise.all([
         supabase.from('students').select('*').order('name'),
-        supabase.from('student_assessments').select('*'),
+        supabase.from('student_assessments').select('*').limit(MAX_ROWS),
       ])
 
       const byStudent = new Map<string, StudentAssessment[]>()

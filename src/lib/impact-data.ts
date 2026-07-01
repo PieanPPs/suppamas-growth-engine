@@ -1,5 +1,6 @@
 import { createClient } from './supabase/client'
 import { getSchoolId } from './school'
+import { MAX_ROWS } from './db'
 import {
   StudentAssessment, HomeworkSubmission, PacingLog, PlanSubmission,
   CurriculumModule, AcademicSettings, Indicator, ModuleIndicator,
@@ -40,10 +41,10 @@ export async function loadImpact(): Promise<ImpactData> {
     { data: modules }, { data: settings }, { data: students }, { data: teachers },
     { data: classrooms }, { data: indicators }, { data: moduleIndicators },
   ] = await Promise.all([
-    supabase.from('student_assessments').select('*'),
-    supabase.from('homework_submissions').select('*'),
-    supabase.from('pacing_logs').select('*'),
-    supabase.from('plan_submissions').select('*'),
+    supabase.from('student_assessments').select('*').limit(MAX_ROWS),
+    supabase.from('homework_submissions').select('*').limit(MAX_ROWS),
+    supabase.from('pacing_logs').select('*').limit(MAX_ROWS),
+    supabase.from('plan_submissions').select('*').limit(MAX_ROWS),
     supabase.from('curriculum_modules').select('*'),
     supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
     supabase.from('students').select('id'),

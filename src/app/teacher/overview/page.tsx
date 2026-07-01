@@ -13,6 +13,7 @@ import {
 import { AlertTriangle, BookOpen, Users, TrendingUp, Loader2, TrendingDown } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
+import { MAX_ROWS } from '@/lib/db'
 
 /** Extract grade from course.grade or course.name, e.g. "ภาษาไทย ป.3" → "ป.3" */
 function gradeFromCourse(grade: string | null, name: string): string | null {
@@ -65,8 +66,8 @@ export default function TeacherOverviewPage() {
       const [{ data: modules }, { data: pacings }, { data: assessments }, { data: students }] =
         await Promise.all([
           supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
-          supabase.from('pacing_logs').select('*').eq('school_id', schoolId),
-          supabase.from('student_assessments').select('*').eq('school_id', schoolId),
+          supabase.from('pacing_logs').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+          supabase.from('student_assessments').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
           supabase.from('students').select('*').eq('school_id', schoolId),
         ])
 

@@ -14,6 +14,7 @@ import { QrScanner } from '@/components/qr-scanner'
 import { RoomFilter, readStoredRoom, storeRoom } from '@/components/room-filter'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
+import { MAX_ROWS } from '@/lib/db'
 
 const STATUS: Record<HomeworkStatus, { label: string; on: string; icon: React.ReactNode }> = {
   On_Time: { label: 'ตรงเวลา', on: 'bg-green-500 text-white', icon: <CheckCircle2 size={16} /> },
@@ -56,11 +57,7 @@ export default function HomeworkPage() {
         supabase.from('students').select('*').eq('school_id', schoolId).order('name'),
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
         supabase.from('homework_tasks').select('*').eq('school_id', schoolId),
-        // PostgREST caps unlimited selects at 1000 rows by default -- this table accumulates
-        // one row per student per module per lesson plan and had already silently exceeded
-        // that, causing "existing row" lookups to miss real rows and insert duplicates instead
-        // of updating them. Explicit high limit until this is properly paginated/scoped.
-        supabase.from('homework_submissions').select('*').eq('school_id', schoolId).limit(20000),
+        supabase.from('homework_submissions').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
         supabase.from('lesson_plans').select('id, module_id, topic, plan_number').eq('school_id', schoolId).order('plan_number'),
       ])
 

@@ -13,6 +13,7 @@ import { TRAIT_ITEMS, LEVEL_LABELS } from '@/lib/traits'
 import { buildStudentTagScores } from '@/lib/analytics'
 import { Loader2, Printer, ArrowLeft } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
+import { MAX_ROWS } from '@/lib/db'
 
 export default function Pp6PrintPage() {
   const supabase = createClient()
@@ -45,14 +46,14 @@ export default function Pp6PrintPage() {
         supabase.from('students').select('*').eq('school_id', schoolId).order('student_number'),
         supabase.from('courses').select('*').eq('school_id', schoolId).order('name'),
         supabase.from('score_components').select('*').eq('school_id', schoolId).order('sequence_order'),
-        supabase.from('component_scores').select('*'),
+        supabase.from('component_scores').select('*').limit(MAX_ROWS),
         supabase.from('tests').select('*').eq('school_id', schoolId),
-        supabase.from('test_scores').select('*').eq('school_id', schoolId),
-        supabase.from('student_assessments').select('*').eq('school_id', schoolId),
+        supabase.from('test_scores').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+        supabase.from('student_assessments').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId),
-        supabase.from('homework_submissions').select('*').eq('school_id', schoolId),
-        supabase.from('trait_ratings').select('*').eq('school_id', schoolId),
-        supabase.from('attendance').select('*').eq('school_id', schoolId),
+        supabase.from('homework_submissions').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+        supabase.from('trait_ratings').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+        supabase.from('attendance').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
         supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
       ])
       const allStudents = (stds ?? []) as Student[]

@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { CurriculumModule, PacingLog, StudentAssessment, Student } from '@/lib/types'
 import { computeAtRiskStudents, RiskWarning } from '@/lib/predictive'
+import { MAX_ROWS } from '@/lib/db'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
@@ -51,8 +52,8 @@ export default function DashboardPage() {
         { data: students },
       ] = await Promise.all([
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
-        supabase.from('pacing_logs').select('*').eq('school_id', schoolId),
-        supabase.from('student_assessments').select('*').eq('school_id', schoolId),
+        supabase.from('pacing_logs').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+        supabase.from('student_assessments').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
         supabase.from('students').select('*').eq('school_id', schoolId),
       ])
 

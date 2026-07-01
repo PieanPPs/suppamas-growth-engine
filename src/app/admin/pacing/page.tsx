@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { getSchoolId } from '@/lib/school'
+import { MAX_ROWS } from '@/lib/db'
 import {
   CurriculumModule, PacingLog, StudentAssessment, PlanSubmission, AcademicSettings,
   Indicator, ModuleIndicator, Test, TestScore,
@@ -44,14 +45,14 @@ export default function CrossTrackingPage() {
         { data: tests }, { data: testScores },
       ] = await Promise.all([
         supabase.from('curriculum_modules').select('*').order('subject').order('sequence_order', { nullsFirst: false }),
-        supabase.from('pacing_logs').select('*'),
-        supabase.from('student_assessments').select('*'),
-        supabase.from('plan_submissions').select('*'),
+        supabase.from('pacing_logs').select('*').limit(MAX_ROWS),
+        supabase.from('student_assessments').select('*').limit(MAX_ROWS),
+        supabase.from('plan_submissions').select('*').limit(MAX_ROWS),
         supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
         supabase.from('indicators').select('*'),
         supabase.from('module_indicators').select('*'),
         supabase.from('tests').select('*'),
-        supabase.from('test_scores').select('*'),
+        supabase.from('test_scores').select('*').limit(MAX_ROWS),
       ])
 
       const week = settings ? currentAcademicWeek((settings as AcademicSettings).term_start_date) : 0

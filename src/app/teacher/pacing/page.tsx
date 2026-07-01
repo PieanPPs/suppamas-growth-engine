@@ -20,6 +20,7 @@ import Link from 'next/link'
 import { Loader2, UserCircle2, ChevronDown, CalendarX2, BookPlus } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
+import { MAX_ROWS } from '@/lib/db'
 
 const TEACHER_KEY = 'sge_teacher_id'
 
@@ -50,9 +51,7 @@ export default function PacingPage() {
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('subject').order('sequence_order', { nullsFirst: false }),
         supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
         supabase.from('homework_tasks').select('*').eq('school_id', schoolId),
-        // PostgREST caps unlimited selects at 1000 rows -- this table already exceeds that
-        // for this school, which was silently under-counting exit-ticket totals here.
-        supabase.from('student_assessments').select('*').eq('school_id', schoolId).limit(20000),
+        supabase.from('student_assessments').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
         supabase.from('students').select('id, class_name').eq('school_id', schoolId),
       ])
 
@@ -112,12 +111,13 @@ export default function PacingPage() {
 
   useEffect(() => {
     async function loadTeacherData() {
-      let plQ = supabase.from('plan_submissions').select('*').eq('school_id', schoolId)
-      let pcQ = supabase.from('pacing_logs').select('*').eq('school_id', schoolId)
+      let plQ = supabase.from('plan_submissions').select('*').eq('school_id', schoolId).limit(MAX_ROWS)
+      let pcQ = supabase.from('pacing_logs').select('*').eq('school_id', schoolId).limit(MAX_ROWS)
       let lpQ = supabase.from('lesson_plans')
         .select('id, topic, status, plan_number, module_id')
         .eq('school_id', schoolId)
         .order('plan_number', { ascending: true })
+        .limit(MAX_ROWS)
       if (teacherId) {
         plQ = plQ.eq('teacher_id', teacherId)
         pcQ = pcQ.eq('teacher_id', teacherId)

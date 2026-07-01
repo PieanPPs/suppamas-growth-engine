@@ -10,6 +10,7 @@ import { ScoreModeSwitch } from '@/components/score-mode-switch'
 import { RoomFilter, readStoredRoom, storeRoom } from '@/components/room-filter'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
+import { MAX_ROWS } from '@/lib/db'
 import { PromptKit } from '@/components/tests/prompt-kit'
 import { ImportItems } from '@/components/tests/import-items'
 import { ParsedExamItem } from '@/lib/exam-import'
@@ -76,9 +77,9 @@ export default function TestsPage() {
       supabase.from('students').select('*').eq('school_id', schoolId).order('class_name').order('student_number'),
       supabase.from('tests').select('*').eq('school_id', schoolId).order('test_date', { ascending: false }),
       supabase.from('test_indicators').select('*'),
-      supabase.from('test_scores').select('*').eq('school_id', schoolId),
-      supabase.from('test_items').select('*').order('item_no'),
-      supabase.from('test_item_responses').select('*').eq('school_id', schoolId),
+      supabase.from('test_scores').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
+      supabase.from('test_items').select('*').order('item_no').limit(MAX_ROWS),
+      supabase.from('test_item_responses').select('*').eq('school_id', schoolId).limit(MAX_ROWS),
     ])
     setTeachers(ts ?? []); setCourses(crs ?? []); setIndicators(inds ?? [])
     setStudents(stds ?? []); setTests(tst ?? []); setTestIndicators(ti ?? []); setAllScores(sc ?? [])
@@ -185,7 +186,7 @@ export default function TestsPage() {
     if (rows.length > 0) {
       await supabase.from('test_scores').upsert(rows, { onConflict: 'test_id,student_id' })
     }
-    const { data: sc } = await supabase.from('test_scores').select('*').eq('school_id', schoolId)
+    const { data: sc } = await supabase.from('test_scores').select('*').eq('school_id', schoolId).limit(MAX_ROWS)
     setAllScores(sc ?? [])
     setSaving(false)
     setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2000)
