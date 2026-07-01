@@ -231,9 +231,11 @@ export default function TestsPage() {
       .filter(r => !(r.test_item_id === itemId && r.student_id === studentId))
       .concat({ id: '', test_id: testId, test_item_id: itemId, student_id: studentId, correct: nowCorrect })
     setAllResponses(updated)
-    // recalculate total score for this student from all responses
-    const correctCount = updated.filter(r => r.test_id === testId && r.student_id === studentId && r.correct).length
-    setScoreInputs(prev => ({ ...prev, [studentId]: String(correctCount) }))
+    // an item with no response row yet defaults to correct (teacher only taps the wrong
+    // ones), so the score is total items minus however many were explicitly marked wrong
+    const totalItems = testItems.filter(i => i.test_id === testId).length
+    const wrongCount = updated.filter(r => r.test_id === testId && r.student_id === studentId && !r.correct).length
+    setScoreInputs(prev => ({ ...prev, [studentId]: String(totalItems - wrongCount) }))
   }
 
   if (loading) {
@@ -402,8 +404,9 @@ export default function TestsPage() {
                   {hasItems && studentResponses.length > 0 && (
                     <div className="flex gap-0.5 flex-wrap justify-end max-w-[120px]">
                       {activeItems.map(item => {
+                        // no row yet defaults to correct (teacher only taps the wrong ones)
                         const c = responseMap.get(item.id)
-                        return <span key={item.id} className={`w-3 h-3 rounded-sm ${c === true ? 'bg-green-400' : c === false ? 'bg-red-300' : 'bg-gray-200'}`} />
+                        return <span key={item.id} className={`w-3 h-3 rounded-sm ${c === false ? 'bg-red-300' : 'bg-green-400'}`} />
                       })}
                     </div>
                   )}
@@ -421,16 +424,17 @@ export default function TestsPage() {
                     {hasItems ? (
                       /* Per-item toggle mode */
                       <div className="mt-2.5 space-y-2">
-                        <p className="text-[10px] text-gray-400">แตะข้อที่ <span className="text-green-600 font-semibold">ถูก</span> — ข้อที่ยังเป็นสีเทา = ผิด</p>
+                        <p className="text-[10px] text-gray-400">แตะข้อที่ <span className="text-red-600 font-semibold">ผิด</span> — ข้อที่ไม่แตะ = ถูก</p>
                         <div className="grid grid-cols-5 gap-1.5">
                           {activeItems.map(item => {
-                            const isCorrect = responseMap.get(item.id) ?? false
+                            const stored = responseMap.get(item.id)
+                            const isCorrect = stored === undefined ? true : stored
                             return (
                               <button
                                 key={item.id}
                                 onClick={() => toggleItemResponse(activeTest.id, item.id, s.id, !isCorrect)}
                                 className={`py-2 rounded-xl text-xs font-bold transition-all active:scale-95 flex flex-col items-center gap-0.5 ${
-                                  isCorrect ? 'bg-green-500 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                  isCorrect ? 'bg-gray-100 text-gray-500 hover:bg-gray-200' : 'bg-red-500 text-white shadow-sm'
                                 }`}
                               >
                                 <span className="text-sm">{item.item_no}</span>
