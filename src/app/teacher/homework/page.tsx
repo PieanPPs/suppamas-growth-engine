@@ -107,9 +107,23 @@ export default function HomeworkPage() {
   }, [])
 
   // O(1) lookup: "studentId:moduleId" → status (module-level aggregate, used by overview/matrix)
+  // A student can have more than one row per module now (one per lesson_plan_id, plus
+  // possibly a legacy row with lesson_plan_id = null from before this column existed).
+  // For module-level overview stats, collapse to the most recently created row per
+  // student+module so a stale/legacy row never masks the one just saved.
+  const latestByStudentModule = useMemo(() => {
+    const map = new Map<string, HomeworkSubmission>()
+    allSubs.forEach(s => {
+      const key = `${s.student_id}:${s.module_id}`
+      const existing = map.get(key)
+      if (!existing || s.created_at > existing.created_at) map.set(key, s)
+    })
+    return map
+  }, [allSubs])
+
   const subsLookup = useMemo(() =>
-    new Map(allSubs.map(s => [`${s.student_id}:${s.module_id}`, s.status])),
-    [allSubs]
+    new Map(Array.from(latestByStudentModule.entries()).map(([key, s]) => [key, s.status])),
+    [latestByStudentModule]
   )
 
   // subs for current module + lesson plan (entry view)
@@ -299,7 +313,9 @@ export default function HomeworkPage() {
 
   // summary cards per filtered module
   const summaryRows = filteredModules.map(mod => {
-    const modSubs = allSubs.filter(s => s.module_id === mod.id && matrixStudents.some(b => b.id === s.student_id))
+    const modSubs = matrixStudents
+      .map(b => latestByStudentModule.get(`${b.id}:${mod.id}`))
+      .filter((s): s is HomeworkSubmission => !!s)
     const total = matrixStudents.length
     const onTime = modSubs.filter(s => s.status === 'On_Time').length
     const late = modSubs.filter(s => s.status === 'Late').length
