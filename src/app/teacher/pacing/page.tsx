@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import {
   CurriculumModule, PacingLog, PlanSubmission, AcademicSettings, Teacher,
-  HomeworkTask, StudentAssessment, LessonPlan,
+  HomeworkTask, StudentAssessment, LessonPlan, Student,
 } from '@/lib/types'
 import {
   currentAcademicWeek, computeSubjectPacing, weekOfLesson, latestPacingByModule,
@@ -38,7 +38,8 @@ export default function PacingPage() {
   const [homeworkTasks, setHomeworkTasks] = useState<Map<string, HomeworkTask>>(new Map())
   const [exitByModule, setExitByModule] = useState<Map<string, { count: number; avg: number }>>(new Map())
   const [exitByLessonPlan, setExitByLessonPlan] = useState<Map<string, { count: number; avg: number }>>(new Map())
-  const [totalStudents, setTotalStudents] = useState(0)
+  const [allStudents, setAllStudents] = useState<Pick<Student, 'id' | 'class_name'>[]>([])
+  const [boundRooms, setBoundRooms] = useState<string[]>([])
   const [selectedWeek, setSelectedWeek] = useState(1)
   const [lessonPlansByModule, setLessonPlansByModule] = useState<Map<string, Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number'>[]>>(new Map())
 
@@ -50,7 +51,7 @@ export default function PacingPage() {
         supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
         supabase.from('homework_tasks').select('*').eq('school_id', schoolId),
         supabase.from('student_assessments').select('*').eq('school_id', schoolId),
-        supabase.from('students').select('id').eq('school_id', schoolId),
+        supabase.from('students').select('id, class_name').eq('school_id', schoolId),
       ])
 
       const settingsRow = s ?? { id: 1, term_name: 'ภาคเรียนที่ 1', term_start_date: '2026-05-18', total_weeks: 20 }
@@ -58,7 +59,7 @@ export default function PacingPage() {
       setModules(mods ?? [])
       setTeachers(ts ?? [])
       setHomeworkTasks(new Map((tasks ?? []).map((t: HomeworkTask) => [t.module_id, t])))
-      setTotalStudents(students?.length ?? 0)
+      setAllStudents((students ?? []) as Pick<Student, 'id' | 'class_name'>[])
 
       // exit-ticket summary per module (distinct students + avg)
       const byModule = new Map<string, StudentAssessment[]>()
@@ -124,6 +125,19 @@ export default function PacingPage() {
       setPlans(new Map((pl ?? []).map((p: PlanSubmission) => [p.module_id, p])))
       setPacings(latestPacingByModule((pc ?? []) as PacingLog[]))
 
+      // rooms bound to this teacher — exit-ticket totals should count only these students
+      if (teacherId) {
+        const { data: links } = await supabase
+          .from('teacher_classrooms').select('classrooms(name)').eq('teacher_id', teacherId)
+        const names = (links ?? [])
+          .map((r: { classrooms: { name: string } | { name: string }[] | null }) =>
+            Array.isArray(r.classrooms) ? r.classrooms[0]?.name : r.classrooms?.name)
+          .filter(Boolean) as string[]
+        setBoundRooms(names)
+      } else {
+        setBoundRooms([])
+      }
+
       // group lesson plans by module_id
       type LpSlim = Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number'> & { module_id: string | null }
       const byMod = new Map<string, Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number'>[]>()
@@ -150,6 +164,11 @@ export default function PacingPage() {
   if (loading || !settings) {
     return <div className="flex items-center justify-center py-24"><Loader2 className="animate-spin text-blue-500" size={32} /></div>
   }
+
+  // exit-ticket totals should count only the teacher's assigned classroom(s), not the whole school
+  const totalStudents = boundRooms.length > 0
+    ? allStudents.filter(s => boundRooms.includes(s.class_name)).length
+    : allStudents.length
 
   const currentWeek = currentAcademicWeek(settings.term_start_date)
   const completedIds = new Set(
