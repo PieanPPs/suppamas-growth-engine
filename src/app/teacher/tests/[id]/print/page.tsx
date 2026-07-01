@@ -9,7 +9,7 @@ import Link from 'next/link'
 import type { Paragraph, Table as DocxTable } from 'docx'
 
 const TYPE_LABEL: Record<string, string> = {
-  quiz: 'สอบเก็บคะแนน', midterm: 'สอบกลางภาค', final: 'สอบปลายภาค', mock_nt: 'ข้อสอบ Pre-NT',
+  quiz: 'สอบเก็บคะแนน', formative: 'แบบทดสอบระหว่างเรียน', midterm: 'สอบกลางภาค', final: 'สอบปลายภาค', mock_nt: 'ข้อสอบ Pre-NT',
 }
 
 export default function PrintExamPage() {

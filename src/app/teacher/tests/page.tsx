@@ -23,10 +23,11 @@ import {
 const TEACHER_KEY = 'sge_teacher_id'
 
 const TEST_TYPES: Record<TestType, { label: string; cls: string }> = {
-  quiz:    { label: 'สอบเก็บคะแนน', cls: 'bg-blue-100 text-blue-700' },
-  midterm: { label: 'กลางภาค', cls: 'bg-purple-100 text-purple-700' },
-  final:   { label: 'ปลายภาค', cls: 'bg-rose-100 text-rose-700' },
-  mock_nt: { label: 'Pre-NT', cls: 'bg-emerald-100 text-emerald-700' },
+  quiz:      { label: 'สอบเก็บคะแนน', cls: 'bg-blue-100 text-blue-700' },
+  formative: { label: 'แบบทดสอบระหว่างเรียน', cls: 'bg-amber-100 text-amber-700' },
+  midterm:   { label: 'กลางภาค', cls: 'bg-purple-100 text-purple-700' },
+  final:     { label: 'ปลายภาค', cls: 'bg-rose-100 text-rose-700' },
+  mock_nt:   { label: 'Pre-NT', cls: 'bg-emerald-100 text-emerald-700' },
 }
 
 /** normalize Thai student names for fuzzy matching (strip prefixes/spaces) */

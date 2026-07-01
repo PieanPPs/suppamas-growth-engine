@@ -42,7 +42,7 @@ export interface ModuleIndicator {
   indicator_id: string
 }
 
-export type TestType = 'quiz' | 'midterm' | 'final' | 'mock_nt'
+export type TestType = 'quiz' | 'formative' | 'midterm' | 'final' | 'mock_nt'
 
 export interface Test {
   id: string
