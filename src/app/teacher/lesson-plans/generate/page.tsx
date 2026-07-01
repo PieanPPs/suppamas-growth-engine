@@ -206,12 +206,9 @@ export default function GenerateLessonPlanPage() {
     const course = getCourseFor(mod!)
     const teacherId = session?.role === 'teacher' && session.userId ? session.userId : null
 
-    // count existing plans for this teacher+module
-    const { count } = await supabase.from('lesson_plans')
-      .select('*', { count: 'exact', head: true })
-      .eq('school_id', schoolId)
-      .eq('module_id', moduleId)
-    const planNumber = (count ?? 0) + 1
+    // reuse the same teacher+module-scoped count already shown in the "existing plans" banner,
+    // so the number the teacher was shown and the number actually saved can never diverge
+    const planNumber = existingPlans.length + 1
 
     const { data, error } = await supabase.from('lesson_plans').insert({
       school_id: schoolId,
@@ -226,7 +223,8 @@ export default function GenerateLessonPlanPage() {
     }).select().single()
 
     setSaving(false)
-    if (!error && data) router.push(`/teacher/lesson-plans/${data.id}`)
+    if (error) { alert(`บันทึกแผนไม่สำเร็จ: ${error.message}`); return }
+    if (data) router.push(`/teacher/lesson-plans/${data.id}`)
   }
 
   if (loading) return (
