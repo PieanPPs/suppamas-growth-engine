@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { getSchoolId } from '@/lib/school'
-import { fetchAllPaged } from '@/lib/db'
+import { fetchAllPaged, getTermStartISO } from '@/lib/db'
 import {
   CurriculumModule, PacingLog, StudentAssessment, PlanSubmission, AcademicSettings,
   Indicator, ModuleIndicator, Test, TestScore,
@@ -39,20 +39,35 @@ export default function CrossTrackingPage() {
 
   useEffect(() => {
     async function load() {
+      const termStart = await getTermStartISO(supabase, schoolId)
+
       const [
         { data: modules }, pacings, assessments,
         plans, { data: settings }, { data: indicators }, { data: moduleIndicators },
         { data: tests }, testScores,
       ] = await Promise.all([
         supabase.from('curriculum_modules').select('*').order('subject').order('sequence_order', { nullsFirst: false }),
+        // NOT term-scoped: pacing status is cumulative per module, used as latest-wins below.
         fetchAllPaged<PacingLog>(() => supabase.from('pacing_logs').select('*').order('id')),
-        fetchAllPaged<StudentAssessment>(() => supabase.from('student_assessments').select('*').order('id')),
+        // term-scoped: this feeds the "assessment health" snapshot, which should reflect
+        // this term's activity, and is this school's single biggest growth table.
+        fetchAllPaged<StudentAssessment>(() => {
+          let q = supabase.from('student_assessments').select('*')
+          if (termStart) q = q.gte('created_at', termStart)
+          return q.order('id')
+        }),
+        // NOT term-scoped: existence check per module_id (has this plan ever been submitted).
         fetchAllPaged<PlanSubmission>(() => supabase.from('plan_submissions').select('*').order('id')),
         supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
         supabase.from('indicators').select('*'),
         supabase.from('module_indicators').select('*'),
         supabase.from('tests').select('*'),
-        fetchAllPaged<TestScore>(() => supabase.from('test_scores').select('*').order('id')),
+        // term-scoped for the same reason as student_assessments above.
+        fetchAllPaged<TestScore>(() => {
+          let q = supabase.from('test_scores').select('*')
+          if (termStart) q = q.gte('created_at', termStart)
+          return q.order('id')
+        }),
       ])
 
       const week = settings ? currentAcademicWeek((settings as AcademicSettings).term_start_date) : 0

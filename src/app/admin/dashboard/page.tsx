@@ -6,7 +6,7 @@ import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { CurriculumModule, PacingLog, StudentAssessment, Student } from '@/lib/types'
 import { computeAtRiskStudents, RiskWarning } from '@/lib/predictive'
-import { fetchAllPaged } from '@/lib/db'
+import { fetchAllPaged, getTermStartISO } from '@/lib/db'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
@@ -45,6 +45,10 @@ export default function DashboardPage() {
   const [warnings, setWarnings] = useState<RiskWarning[]>([])
   useEffect(() => {
     async function load() {
+      // scope growth-table reads to the current term instead of the school's entire
+      // all-time history, which only ever grows and slows this page down more each term
+      const termStart = await getTermStartISO(supabase, schoolId)
+
       const [
         { data: modules },
         pacings,
@@ -52,8 +56,16 @@ export default function DashboardPage() {
         { data: students },
       ] = await Promise.all([
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
+        // NOT term-scoped: pacing status is cumulative per module (latest-wins below), so a
+        // module completed last term must still show as completed this term.
         fetchAllPaged<PacingLog>(() => supabase.from('pacing_logs').select('*').eq('school_id', schoolId).order('id')),
-        fetchAllPaged<StudentAssessment>(() => supabase.from('student_assessments').select('*').eq('school_id', schoolId).order('id')),
+        // term-scoped: this feeds "at risk right now" -- diluting it with a year of history
+        // would blunt the signal, and it's also this school's single biggest growth table.
+        fetchAllPaged<StudentAssessment>(() => {
+          let q = supabase.from('student_assessments').select('*').eq('school_id', schoolId)
+          if (termStart) q = q.gte('created_at', termStart)
+          return q.order('id')
+        }),
         supabase.from('students').select('*').eq('school_id', schoolId),
       ])
 

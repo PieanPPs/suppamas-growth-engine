@@ -5,7 +5,8 @@ import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { Student, StudentAssessment, HomeworkSubmission } from '@/lib/types'
 import { computeHeroScores } from '@/lib/gamification'
-import { fetchAllPaged } from '@/lib/db'
+import { fetchAllPaged, getTermStartISO } from '@/lib/db'
+import { getSchoolId } from '@/lib/school'
 import { RoomFilter, readStoredRoom, storeRoom } from '@/components/room-filter'
 import { Loader2, Trophy, Star, Heart, BookCheck, Smile } from 'lucide-react'
 
@@ -22,10 +23,22 @@ export default function HeroesPage() {
 
   useEffect(() => {
     async function load() {
+      // scope to the current term so the leaderboard reflects this term's activity and
+      // doesn't slow down more each term as history accumulates
+      const termStart = await getTermStartISO(supabase, getSchoolId())
+
       const [{ data: st }, asm, hw] = await Promise.all([
         supabase.from('students').select('*'),
-        fetchAllPaged<StudentAssessment>(() => supabase.from('student_assessments').select('*').order('id')),
-        fetchAllPaged<HomeworkSubmission>(() => supabase.from('homework_submissions').select('*').order('id')),
+        fetchAllPaged<StudentAssessment>(() => {
+          let q = supabase.from('student_assessments').select('*')
+          if (termStart) q = q.gte('created_at', termStart)
+          return q.order('id')
+        }),
+        fetchAllPaged<HomeworkSubmission>(() => {
+          let q = supabase.from('homework_submissions').select('*')
+          if (termStart) q = q.gte('created_at', termStart)
+          return q.order('id')
+        }),
       ])
       setStudents((st ?? []) as Student[])
       setAssessments(asm)

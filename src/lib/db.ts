@@ -26,3 +26,21 @@ export async function fetchAllPaged<T>(makeQuery: () => RangeableQuery<T>): Prom
   }
   return all
 }
+
+/**
+ * ISO timestamp for the start of the current academic term, or null if unset.
+ * Analytics/dashboard pages should scope their growth-table reads to this instead of
+ * pulling the school's entire all-time history — student_assessments alone grows by
+ * roughly (subjects × sessions/week × weeks × class size) rows per term, so an
+ * unfiltered read gets slower every term the school keeps using the system.
+ *
+ * `supabase` is typed `any` deliberately: the real Supabase client's generic .from()
+ * overloads make TypeScript's structural check against any narrower shape blow up with
+ * "type instantiation is excessively deep" at every call site.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getTermStartISO(supabase: any, schoolId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('academic_settings').select('term_start_date').eq('school_id', schoolId).maybeSingle()
+  return data?.term_start_date ? `${data.term_start_date}T00:00:00` : null
+}

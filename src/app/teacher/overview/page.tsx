@@ -13,7 +13,7 @@ import {
 import { AlertTriangle, BookOpen, Users, TrendingUp, Loader2, TrendingDown } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
-import { fetchAllPaged } from '@/lib/db'
+import { fetchAllPaged, getTermStartISO } from '@/lib/db'
 
 /** Extract grade from course.grade or course.name, e.g. "ภาษาไทย ป.3" → "ป.3" */
 function gradeFromCourse(grade: string | null, name: string): string | null {
@@ -63,11 +63,19 @@ export default function TeacherOverviewPage() {
       )]
       setGrades(gradeList)
 
+      const termStart = await getTermStartISO(supabase, schoolId)
+
       const [{ data: modules }, pacings, assessments, { data: students }] =
         await Promise.all([
           supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
+          // NOT term-scoped: pacing status is cumulative per module (latest-wins below).
           fetchAllPaged<PacingLog>(() => supabase.from('pacing_logs').select('*').eq('school_id', schoolId).order('id')),
-          fetchAllPaged<StudentAssessment>(() => supabase.from('student_assessments').select('*').eq('school_id', schoolId).order('id')),
+          // term-scoped: feeds "at risk right now" + avg score, and is the biggest growth table.
+          fetchAllPaged<StudentAssessment>(() => {
+            let q = supabase.from('student_assessments').select('*').eq('school_id', schoolId)
+            if (termStart) q = q.gte('created_at', termStart)
+            return q.order('id')
+          }),
           supabase.from('students').select('*').eq('school_id', schoolId),
         ])
 
