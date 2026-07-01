@@ -228,6 +228,7 @@ export default function AssessmentPage() {
   // init grades + prefill today's existing records (one per student/module/day)
   useEffect(() => {
     if (!selectedModule || visibleStudents.length === 0) { setGrades({}); return }
+    let cancelled = false
     async function initGrades() {
       let q = supabase
         .from('student_assessments')
@@ -237,6 +238,7 @@ export default function AssessmentPage() {
         .gte('created_at', startOfTodayISO())
       if (lessonPlanId) q = q.eq('lesson_plan_id', lessonPlanId)
       const { data: existing } = await q
+      if (cancelled) return // a newer room/module switch already fired — discard this stale response
       const byStudent = new Map<string, StudentAssessment>()
       ;(existing ?? []).forEach((a: StudentAssessment) => byStudent.set(a.student_id, a))
 
@@ -259,6 +261,7 @@ export default function AssessmentPage() {
       setAllSaved(visibleStudents.length > 0 && visibleStudents.every(s => initial[s.id]?.saved))
     }
     initGrades()
+    return () => { cancelled = true }
   }, [visibleStudents.map(s => s.id).join(','), selectedModule, lessonPlanId])
 
   function selectTeacher(id: string) {
@@ -268,13 +271,16 @@ export default function AssessmentPage() {
 
   // เช็คชื่อวันนี้ของห้องที่เลือก
   useEffect(() => {
+    let cancelled = false
     async function loadAttendance() {
       const { data } = await supabase.from('attendance').select('*').eq('school_id', schoolId).eq('date', todayDateStr())
+      if (cancelled) return
       const map: Record<string, AttendanceRecord> = {}
       ;(data ?? []).forEach((a: AttendanceRecord) => { map[a.student_id] = a })
       setAttendance(map)
     }
     loadAttendance()
+    return () => { cancelled = true }
   }, [selectedRoom])
 
   async function cycleAttendance(studentId: string) {
