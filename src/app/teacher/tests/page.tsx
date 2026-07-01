@@ -346,34 +346,52 @@ export default function TestsPage() {
           </button>
         </div>
 
-        {/* ── Item Analysis (only when test has items and someone has responses) ── */}
-        {hasItems && allResponses.some(r => r.test_id === activeTest.id) && (
-          <div className="bg-white border border-gray-200 rounded-2xl p-3">
-            <p className="text-xs font-bold text-gray-600 flex items-center gap-1 mb-2.5">
-              <BarChart2 size={13} className="text-blue-500" /> วิเคราะห์รายข้อ (% ถูก)
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {activeItems.map(item => {
-                const rsp = allResponses.filter(r => r.test_item_id === item.id && visibleStudents.some(s => s.id === r.student_id))
-                const correctCount = rsp.filter(r => r.correct).length
-                const total = rsp.length
-                const pct = total > 0 ? correctCount / total : null
-                return (
-                  <div key={item.id} className={`flex flex-col items-center rounded-xl px-2 py-1.5 min-w-[2.8rem] ${
-                    pct === null ? 'bg-gray-50 border border-gray-100' :
-                    pct >= 0.8 ? 'bg-green-100' :
-                    pct >= 0.5 ? 'bg-yellow-100' :
-                    'bg-red-100'
-                  }`}>
-                    <span className="text-xs font-bold text-gray-700">{item.item_no}</span>
-                    {item.indicator_code && <span className="text-[9px] text-gray-500 leading-tight">{item.indicator_code}</span>}
-                    {pct !== null && <span className={`text-[10px] font-semibold mt-0.5 ${pct >= 0.8 ? 'text-green-700' : pct >= 0.5 ? 'text-yellow-700' : 'text-red-600'}`}>{Math.round(pct * 100)}%</span>}
-                  </div>
-                )
-              })}
+        {/* ── Item Analysis (only when test has items and someone has been graded) ── */}
+        {hasItems && visibleStudents.some(s => scoreInputs[s.id] !== '' || allResponses.some(r => r.test_id === activeTest.id && r.student_id === s.id)) && (() => {
+          // A student with no response row for an item defaults to correct (see the
+          // per-student grading view above) -- the denominator here must be everyone who's
+          // been graded at all for this test, not just students with an explicit row for
+          // THIS item, or an item nobody happened to tap wrong would wrongly show "no data".
+          const gradedStudentIds = visibleStudents
+            .filter(s => scoreInputs[s.id] !== '' || allResponses.some(r => r.test_id === activeTest.id && r.student_id === s.id))
+            .map(s => s.id)
+          const gradedTotal = gradedStudentIds.length
+          return (
+            <div className="bg-white border border-gray-200 rounded-2xl p-3">
+              <p className="text-xs font-bold text-gray-600 flex items-center gap-1 mb-2.5">
+                <BarChart2 size={13} className="text-blue-500" /> วิเคราะห์รายข้อ (% ถูก จากผู้ที่ตรวจแล้ว {gradedTotal} คน)
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {activeItems.map(item => {
+                  const wrongIds = new Set(
+                    allResponses
+                      .filter(r => r.test_item_id === item.id && r.correct === false && gradedStudentIds.includes(r.student_id))
+                      .map(r => r.student_id)
+                  )
+                  const correctCount = gradedTotal - wrongIds.size
+                  const pct = gradedTotal > 0 ? correctCount / gradedTotal : null
+                  return (
+                    <div key={item.id} className={`flex flex-col items-center rounded-xl px-2 py-1.5 min-w-[3.2rem] ${
+                      pct === null ? 'bg-gray-50 border border-gray-100' :
+                      pct >= 0.8 ? 'bg-green-100' :
+                      pct >= 0.5 ? 'bg-yellow-100' :
+                      'bg-red-100'
+                    }`}>
+                      <span className="text-xs font-bold text-gray-700">{item.item_no}</span>
+                      {item.indicator_code && <span className="text-[9px] text-gray-500 leading-tight">{item.indicator_code}</span>}
+                      {pct !== null && (
+                        <>
+                          <span className={`text-[10px] font-semibold mt-0.5 ${pct >= 0.8 ? 'text-green-700' : pct >= 0.5 ? 'text-yellow-700' : 'text-red-600'}`}>{Math.round(pct * 100)}%</span>
+                          <span className="text-[8px] text-gray-400 leading-none">{correctCount}/{gradedTotal} คน</span>
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         <div className="space-y-1.5">
           {visibleStudents.map((s, i) => {
