@@ -327,7 +327,7 @@ export default function AssessmentPage() {
     setAllSaved(false)
   }
 
-  async function persistGrade(studentId: string, grade: StudentGrade): Promise<string | null> {
+  async function persistGrade(studentId: string, grade: StudentGrade): Promise<{ id: string | null; error: string | null }> {
     const payload = {
       school_id: schoolId,
       student_id: studentId,
@@ -338,22 +338,28 @@ export default function AssessmentPage() {
       soft_skill_score: grade.soft_skill_score,
     }
     if (grade.recordId) {
-      await supabase.from('student_assessments').update(payload).eq('id', grade.recordId)
-      return grade.recordId
+      const { error } = await supabase.from('student_assessments').update(payload).eq('id', grade.recordId)
+      if (error) return { id: null, error: error.message }
+      return { id: grade.recordId, error: null }
     }
-    const { data } = await supabase.from('student_assessments').insert(payload).select('id').single()
-    return data?.id ?? null
+    const { data, error } = await supabase.from('student_assessments').insert(payload).select('id').single()
+    if (error) return { id: null, error: error.message }
+    return { id: data?.id ?? null, error: null }
   }
 
   async function saveStudent(student: Student) {
     const grade = grades[student.id]
     if (!grade || !selectedModule) return
     setSaving(student.id)
-    const id = await persistGrade(student.id, grade)
-    setGrades(prev => ({
-      ...prev,
-      [student.id]: { ...prev[student.id], saved: true, recordId: id },
-    }))
+    const { id, error } = await persistGrade(student.id, grade)
+    if (error) {
+      alert(`บันทึกไม่สำเร็จ: ${error}`)
+    } else {
+      setGrades(prev => ({
+        ...prev,
+        [student.id]: { ...prev[student.id], saved: true, recordId: id },
+      }))
+    }
     setSaving(null)
   }
 
@@ -362,14 +368,21 @@ export default function AssessmentPage() {
     setSaving('all')
     const unsaved = visibleStudents.filter(s => !grades[s.id]?.saved)
     const results = await Promise.all(
-      unsaved.map(async s => ({ id: s.id, recordId: await persistGrade(s.id, grades[s.id]) }))
+      unsaved.map(async s => {
+        const { id, error } = await persistGrade(s.id, grades[s.id])
+        return { studentId: s.id, recordId: id, error }
+      })
     )
+    const failed = results.filter(r => r.error)
     setGrades(prev => {
       const updated = { ...prev }
-      results.forEach(r => { updated[r.id] = { ...updated[r.id], saved: true, recordId: r.recordId } })
+      results.filter(r => !r.error).forEach(r => { updated[r.studentId] = { ...updated[r.studentId], saved: true, recordId: r.recordId } })
       return updated
     })
-    setAllSaved(true)
+    if (failed.length > 0) {
+      alert(`บันทึกไม่สำเร็จ ${failed.length} คน: ${failed[0].error}`)
+    }
+    setAllSaved(failed.length === 0)
     setSaving(null)
   }
 
