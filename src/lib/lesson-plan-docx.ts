@@ -126,7 +126,11 @@ export function buildLessonPlanBlock(docx: DocxLib, input: LessonPlanDocInput) {
       plan.indicators_interim ? `1.1 ตัวชี้วัดระหว่างทาง\n${plan.indicators_interim}` : null,
       plan.indicators_final ? `1.2 ตัวชี้วัดปลายทาง\n${plan.indicators_final}` : null,
     ].filter(Boolean).join('\n\n') || null),
-    ...section(2, 'จุดประสงค์การเรียนรู้', [plan.objectives_k, plan.objectives_p, plan.objectives_a].filter(Boolean).join('\n') || null),
+    ...section(2, 'จุดประสงค์การเรียนรู้', [
+      plan.objectives_k ? `2.1 ด้านความรู้ (K)\n${plan.objectives_k}` : null,
+      plan.objectives_p ? `2.2 ด้านทักษะกระบวนการ (P)\n${plan.objectives_p}` : null,
+      plan.objectives_a ? `2.3 ด้านเจตคติ (A)\n${plan.objectives_a}` : null,
+    ].filter(Boolean).join('\n') || null),
     ...section(3, 'สาระสำคัญ', plan.key_content),
     ...section(4, 'สมรรถนะสำคัญของผู้เรียน', plan.competencies),
     ...section(5, 'คุณลักษณะอันพึงประสงค์', plan.desired_traits),

@@ -125,7 +125,7 @@ export default function LessonPlanPrintPage() {
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          @page { margin: 1.5cm; size: A4; }
+          @page { margin: 0.8cm 1.5cm 1.5cm; size: A4; }
         }
       `}</style>
 
@@ -141,7 +141,7 @@ export default function LessonPlanPrintPage() {
         </button>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-6 text-gray-900 font-sarabun">
+      <div className="max-w-2xl mx-auto px-4 pt-2 pb-6 print:pt-0 text-gray-900 font-sarabun">
         {/* Logo + title */}
         {logoUrl && (
           <div className="flex justify-center mb-1">
@@ -181,7 +181,13 @@ export default function LessonPlanPrintPage() {
             plan.indicators_final ? `1.2 ตัวชี้วัดปลายทาง\n${plan.indicators_final}` : null,
           ].filter(Boolean).join('\n\n')
         } />
-        <Section no={2} title="จุดประสงค์การเรียนรู้" body={[plan.objectives_k, plan.objectives_p, plan.objectives_a].filter(Boolean).join('\n')} />
+        <Section no={2} title="จุดประสงค์การเรียนรู้" body={
+          [
+            plan.objectives_k ? `2.1 ด้านความรู้ (K)\n${plan.objectives_k}` : null,
+            plan.objectives_p ? `2.2 ด้านทักษะกระบวนการ (P)\n${plan.objectives_p}` : null,
+            plan.objectives_a ? `2.3 ด้านเจตคติ (A)\n${plan.objectives_a}` : null,
+          ].filter(Boolean).join('\n\n')
+        } />
         <Section no={3} title="สาระสำคัญ" body={plan.key_content} />
         <Section no={4} title="สมรรถนะสำคัญของผู้เรียน" body={plan.competencies} />
         <Section no={5} title="คุณลักษณะอันพึงประสงค์" body={plan.desired_traits} />
