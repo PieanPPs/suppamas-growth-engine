@@ -57,6 +57,17 @@ export default function PrintExamPage() {
     byIndicator.get(key)!.push(it)
   })
 
+  // ชุดข้อสอบอาจไม่ใช่ปรนัยล้วน (ถูก/ผิด เติมคำ อัตนัย) — ปรับคำชี้แจงและรูปแบบเฉลยตาม
+  const hasChoiceItems = items.some(i => i.choice_a || i.choice_b || i.choice_c || i.choice_d)
+  const allChoiceItems = items.length > 0 && items.every(i => i.choice_a || i.choice_b || i.choice_c || i.choice_d)
+  const instruction = allChoiceItems
+    ? 'คำชี้แจง: ให้นักเรียนเลือกคำตอบที่ถูกต้องที่สุดเพียงข้อเดียว แล้วกากบาท (✗) ลงในกระดาษคำตอบ'
+    : hasChoiceItems
+      ? 'คำชี้แจง: ข้อที่มีตัวเลือก ให้เลือกคำตอบที่ถูกต้องที่สุดเพียงข้อเดียว ข้อที่ไม่มีตัวเลือกให้เขียนคำตอบให้สมบูรณ์'
+      : 'คำชี้แจง: ให้นักเรียนเขียนคำตอบให้ถูกต้องสมบูรณ์'
+  // เฉลยยาว (เติมคำ/แนวคำตอบอัตนัย) ใส่ตาราง 10 ช่องไม่ได้ — เปลี่ยนเป็นรายการเรียงข้อ
+  const longAnswerKey = items.some(i => (i.answer ?? '').length > 4)
+
   async function exportWord() {
     if (!test || exporting) return
     setExporting(true)
@@ -123,23 +134,29 @@ export default function PrintExamPage() {
         return nodes
       })
 
-      // --- answer key grid (10 per row) ---
+      // --- answer key: grid 10 ช่อง/แถวสำหรับเฉลยสั้น (ปรนัย/ถูกผิด) หรือรายการเรียงข้อเมื่อเฉลยยาว ---
       const chunks: TestItem[][] = []
       for (let i = 0; i < items.length; i += 10) chunks.push(items.slice(i, i + 10))
-      const answerRows = chunks.flatMap(chunk => [
-        new TableRow({
-          children: chunk.map(it => new TableCell({
+      const answerNodes: (Paragraph | DocxTable)[] = longAnswerKey
+        ? items.map(it => line(`ข้อ ${it.item_no}: ${it.answer ?? '—'}`))
+        : [new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
             borders: CELL_THIN,
-            children: [line(String(it.item_no), { center: true, size: 11 })],
-          }))
-        }),
-        new TableRow({
-          children: chunk.map(it => new TableCell({
-            borders: CELL_THIN,
-            children: [line(it.answer ?? '—', { center: true, bold: true })],
-          }))
-        }),
-      ])
+            rows: chunks.flatMap(chunk => [
+              new TableRow({
+                children: chunk.map(it => new TableCell({
+                  borders: CELL_THIN,
+                  children: [line(String(it.item_no), { center: true, size: 11 })],
+                }))
+              }),
+              new TableRow({
+                children: chunk.map(it => new TableCell({
+                  borders: CELL_THIN,
+                  children: [line(it.answer ?? '—', { center: true, bold: true })],
+                }))
+              }),
+            ]),
+          })]
 
       // --- indicator table ---
       const indicatorRows = [
@@ -202,14 +219,14 @@ export default function PrintExamPage() {
               ]
             }),
             blank(),
-            line('คำชี้แจง: ให้นักเรียนเลือกคำตอบที่ถูกต้องที่สุดเพียงข้อเดียว แล้วกากบาท (✗) ลงในกระดาษคำตอบ', { size: 13 }),
+            line(instruction, { size: 13 }),
             blank(),
             ...questionNodes,
             // --- Answer key (new page) ---
             new Paragraph({ children: [new PageBreak()] }),
             line(`เฉลย — ${test.title} (สำหรับครู)`, { bold: true, center: true }),
             blank(),
-            new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders: CELL_THIN, rows: answerRows }),
+            ...answerNodes,
             blank(),
             line('แยกตามตัวชี้วัด (ใช้วิเคราะห์จุดอ่อนหลังตรวจ)', { bold: true }),
             blank(),
@@ -284,7 +301,7 @@ export default function PrintExamPage() {
           <span>ชั้น ..............</span>
           <span>เลขที่ ..............</span>
         </div>
-        <p className="text-[11px] text-gray-600 mb-4">คำชี้แจง: ให้นักเรียนเลือกคำตอบที่ถูกต้องที่สุดเพียงข้อเดียว แล้วกากบาท (✗) ลงในกระดาษคำตอบ</p>
+        <p className="text-[11px] text-gray-600 mb-4">{instruction}</p>
 
         {/* ===== questions ===== */}
         <ol className="space-y-3">
@@ -305,14 +322,24 @@ export default function PrintExamPage() {
         <section className="break-before-page mt-10 print:mt-0 pt-6 border-t-2 border-dashed border-gray-300 print:border-0">
           <h2 className="text-sm font-bold text-gray-900 text-center">เฉลย — {test.title} (สำหรับครู)</h2>
 
-          <div className="grid grid-cols-10 gap-1 mt-4">
-            {items.map(it => (
-              <div key={it.id} className="border border-gray-300 rounded text-center py-1">
-                <p className="text-[9px] text-gray-400">{it.item_no}</p>
-                <p className="text-[12px] font-bold text-gray-900">{it.answer ?? '—'}</p>
-              </div>
-            ))}
-          </div>
+          {longAnswerKey ? (
+            <div className="mt-4 space-y-1">
+              {items.map(it => (
+                <p key={it.id} className="text-[12px] text-gray-900">
+                  <span className="font-bold">ข้อ {it.item_no}:</span> {it.answer ?? '—'}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-10 gap-1 mt-4">
+              {items.map(it => (
+                <div key={it.id} className="border border-gray-300 rounded text-center py-1">
+                  <p className="text-[9px] text-gray-400">{it.item_no}</p>
+                  <p className="text-[12px] font-bold text-gray-900">{it.answer ?? '—'}</p>
+                </div>
+              ))}
+            </div>
+          )}
 
           <h3 className="text-[12px] font-bold text-gray-800 mt-5 mb-2">แยกตามตัวชี้วัด (ใช้วิเคราะห์จุดอ่อนหลังตรวจ)</h3>
           <table className="w-full text-[11px] border border-gray-300">

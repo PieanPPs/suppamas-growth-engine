@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { buildExamPrompt } from '@/lib/exam-import'
+import { buildExamPrompt, EXAM_QTYPES, EXAM_STYLES, ExamQType } from '@/lib/exam-import'
 import { X, Copy, Check, Wand2 } from 'lucide-react'
 
 export function PromptKit({
@@ -17,12 +17,25 @@ export function PromptKit({
   onClose: () => void
 }) {
   const [count, setCount] = useState(30)
+  const [qtype, setQtype] = useState<ExamQType>('mc4')
+  const [selectedStyles, setSelectedStyles] = useState<Set<string>>(new Set())
   const [copied, setCopied] = useState(false)
 
   const prompt = useMemo(
-    () => buildExamPrompt({ subjectName, grade, count, indicators }),
-    [subjectName, grade, count, indicators]
+    () => buildExamPrompt({
+      subjectName, grade, count, indicators, qtype,
+      styles: EXAM_STYLES.filter(s => selectedStyles.has(s.key)).map(s => s.text),
+    }),
+    [subjectName, grade, count, indicators, qtype, selectedStyles]
   )
+
+  function toggleStyle(key: string) {
+    setSelectedStyles(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
 
   async function copy() {
     await navigator.clipboard.writeText(prompt)
@@ -44,7 +57,34 @@ export function PromptKit({
         <div className="p-4 space-y-3 overflow-y-auto">
           <div className="bg-violet-50 border border-violet-100 rounded-xl px-3 py-2 text-xs text-violet-700 leading-relaxed">
             <strong>3 ขั้นตอน:</strong> ① คัดลอกพรอมต์นี้ → ② วางใน ChatGPT / Gemini / Claude แล้วรอคำตอบ
-            → ③ คัดลอกคำตอบทั้งหมดกลับมาวางที่ปุ่ม "นำเข้าข้อสอบ"
+            → ③ คัดลอกคำตอบทั้งหมดกลับมาวางที่ปุ่ม &quot;นำเข้าข้อสอบ&quot;
+          </div>
+
+          {/* ประเภทข้อสอบ */}
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-gray-600">รูปแบบข้อสอบ</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              {EXAM_QTYPES.map(t => (
+                <button key={t.key} type="button" onClick={() => setQtype(t.key)}
+                  className={`text-left rounded-xl border px-2.5 py-2 transition-colors ${qtype === t.key ? 'border-violet-400 bg-violet-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                  <span className={`block text-xs font-semibold ${qtype === t.key ? 'text-violet-700' : 'text-gray-700'}`}>{t.label}</span>
+                  <span className="block text-[10px] text-gray-400 leading-snug">{t.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* สไตล์โจทย์ */}
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-gray-600">สไตล์โจทย์ <span className="text-gray-400 font-normal">(เลือกได้หลายแบบ — เพิ่มความหลากหลาย)</span></p>
+            <div className="flex flex-wrap gap-1.5">
+              {EXAM_STYLES.map(s => (
+                <button key={s.key} type="button" onClick={() => toggleStyle(s.key)}
+                  className={`text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors ${selectedStyles.has(s.key) ? 'border-violet-400 bg-violet-50 text-violet-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                  {selectedStyles.has(s.key) ? '✓ ' : ''}{s.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <label className="flex items-center gap-2 text-xs text-gray-500">
@@ -61,7 +101,7 @@ export function PromptKit({
           <textarea
             readOnly
             value={prompt}
-            rows={12}
+            rows={10}
             className="w-full text-xs font-mono border border-gray-200 rounded-xl px-3 py-2 bg-gray-50 text-gray-700"
           />
         </div>

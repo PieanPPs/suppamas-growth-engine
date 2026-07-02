@@ -32,6 +32,54 @@ function parseAIOutput(text: string): Partial<LessonPlan> {
   }
 }
 
+// ======= Prompt extras =======
+// ท่อนพรอมต์สำเร็จรูปให้ครูเลือกแทรกในแผน — เลือกได้หลายแบบพร้อมกัน หรือ copy
+// เฉพาะท่อนไปใช้ต่อยอดกับแผนที่ AI ตอบมาแล้วก็ได้ (เป็นข้อความต่อท้ายในแชทเดิม)
+const PROMPT_EXTRAS: { key: string; label: string; desc: string; text: string }[] = [
+  {
+    key: 'adhd',
+    label: 'เด็กสมาธิสั้น',
+    desc: 'กิจกรรมสั้น สลับบ่อย มีการเคลื่อนไหว',
+    text: 'ห้องเรียนมีเด็กสมาธิสั้น (ADHD) — แบ่งกิจกรรมเป็นช่วงสั้น ๆ ช่วงละไม่เกิน 10 นาที สลับระหว่างนั่งฟังกับลงมือทำ/เคลื่อนไหวร่างกาย มีสัญญาณบอกก่อนเปลี่ยนกิจกรรม และมอบบทบาทให้เด็กกลุ่มนี้มีส่วนร่วม เช่น ผู้ช่วยแจกอุปกรณ์ ผู้จับเวลา',
+  },
+  {
+    key: 'slow',
+    label: 'เด็กเรียนช้า/ตามไม่ทัน',
+    desc: 'มีตัวช่วย ลดขั้นตอน จับคู่เพื่อนช่วยสอน',
+    text: 'มีนักเรียนที่เรียนช้า/ตามไม่ทัน — เพิ่มตัวช่วย (scaffold) เช่น บัตรคำใบ้ ตัวอย่างที่ทำให้ดูทีละขั้น ลดจำนวนข้อฝึกลงแต่คงเป้าหมายเดิม และจัดระบบเพื่อนช่วยเพื่อน (peer tutoring) โดยระบุวิธีจับคู่ให้ชัดเจน',
+  },
+  {
+    key: 'gifted',
+    label: 'เด็กเก่ง/เรียนเร็ว',
+    desc: 'โจทย์ท้าทายต่อยอดสำหรับคนทำเสร็จก่อน',
+    text: 'มีนักเรียนเก่ง/เรียนเร็วที่มักทำเสร็จก่อนเพื่อน — เตรียมกิจกรรมต่อยอด (enrichment) เช่น โจทย์ท้าทายระดับสูงขึ้น ภารกิจพิเศษ หรือบทบาทผู้ช่วยครูสอนเพื่อน โดยระบุไว้ในกิจกรรมการเรียนรู้ให้ชัดว่าช่วงไหนใช้',
+  },
+  {
+    key: 'behavior',
+    label: 'แก้ปัญหาพฤติกรรมในชั้นเรียน',
+    desc: 'ข้อตกลงชั้นเรียน แรงเสริมเชิงบวก',
+    text: 'ห้องเรียนมีปัญหาพฤติกรรม เช่น คุยเสียงดัง ไม่อยู่ในกติกา — สอดแทรกเทคนิคจัดการชั้นเรียนเชิงบวกในแผน เช่น ทบทวนข้อตกลงชั้นเรียนตอนเริ่มคาบ ระบบสะสมแต้มกลุ่ม การชมเชยพฤติกรรมที่ต้องการทันทีที่เห็น และกำหนดสัญญาณเงียบที่ใช้ทั้งคาบ',
+  },
+  {
+    key: 'game',
+    label: 'เกม/การแข่งขัน',
+    desc: 'เปลี่ยนกิจกรรมฝึกเป็นเกมสนุก ๆ',
+    text: 'ออกแบบกิจกรรมฝึกปฏิบัติ (Active Practice) ให้อยู่ในรูปเกมหรือการแข่งขันเป็นทีม เช่น เกมตอบเร็ว บิงโก เกมส่งต่อคำตอบ โดยอธิบายกติกา อุปกรณ์ และวิธีคิดคะแนนให้ครบ พร้อมระบุว่าใช้เวลากี่นาที',
+  },
+  {
+    key: 'reallife',
+    label: 'เชื่อมโยงชีวิตจริง/ท้องถิ่น',
+    desc: 'ใช้ตัวอย่างใกล้ตัวนักเรียนและชุมชน',
+    text: 'ยกตัวอย่างและโจทย์ให้เชื่อมโยงกับชีวิตจริงของนักเรียนและบริบทท้องถิ่น (เช่น ตลาด ร้านค้า อาชีพในชุมชน จังหวัดสมุทรสาคร) แทนตัวอย่างลอย ๆ เพื่อให้นักเรียนเห็นว่าเรื่องนี้ใช้จริงได้ที่ไหน',
+  },
+  {
+    key: 'lowresource',
+    label: 'สื่อประหยัด/หาง่าย',
+    desc: 'ไม่พึ่งเทคโนโลยี ใช้ของที่มีในห้อง',
+    text: 'ห้องเรียนไม่มีโปรเจกเตอร์/อินเทอร์เน็ต — ออกแบบกิจกรรมและสื่อโดยใช้เฉพาะอุปกรณ์หาง่าย เช่น กระดาษ บัตรคำ กระดานดำ ของจริงใกล้ตัว และระบุวิธีเตรียมสื่อล่วงหน้าให้ครูอย่างชัดเจน',
+  },
+]
+
 // ======= Prompt builder =======
 function buildPrompt(opts: {
   subjectName: string
@@ -40,6 +88,8 @@ function buildPrompt(opts: {
   topic: string
   indicators: Indicator[]
   duration: string
+  extras: string[]
+  customNote: string
 }) {
   // split by type so the AI doesn't have to guess which selected indicator goes under
   // ===ตัวชี้วัดระหว่างทาง=== vs ===ตัวชี้วัดปลายทาง=== -- the teacher already told us via the tabs.
@@ -65,6 +115,15 @@ function buildPrompt(opts: {
     ? `ตัวชี้วัดระหว่างทาง (ที่ครูเลือก):\n${fmt(interim)}\nตัวชี้วัดปลายทาง (ที่ครูเลือก):\n${fmt(final)}`
     : '  - (ครูระบุตัวชี้วัดเอง)'
 
+  // ข้อกำหนดพิเศษจากครู (ท่อนสำเร็จรูปที่เลือก + ข้อความอิสระ) — ให้ AI สอดแทรกในกิจกรรม
+  const extraLines = [
+    ...opts.extras,
+    ...(opts.customNote.trim() ? [opts.customNote.trim()] : []),
+  ]
+  const extraBlock = extraLines.length
+    ? `\nข้อกำหนดพิเศษจากครู (สำคัญมาก — ต้องสอดแทรกให้เห็นชัดเจนในกิจกรรมการเรียนรู้ ห้ามละเลย):\n${extraLines.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n`
+    : ''
+
   return `คุณคือผู้เชี่ยวชาญด้านการออกแบบการเรียนรู้เชิงรุก (Active Learning) สำหรับโรงเรียนในประเทศไทย
 
 จงเขียนแผนการจัดการเรียนรู้ 1 คาบ โดยใช้หลักการ Active Learning ที่มีขั้นตอนชัดเจน
@@ -76,7 +135,7 @@ function buildPrompt(opts: {
 - เวลาเรียน: ${opts.duration}
 - ตัวชี้วัดที่เกี่ยวข้อง:
 ${indList}
-
+${extraBlock}
 **กฎสำคัญ: ตอบเฉพาะรูปแบบที่กำหนดด้านล่าง ห้ามเพิ่มคำอธิบายนอกรูปแบบ**
 
 ตอบตามรูปแบบนี้ทุกหัวข้อ โดยใช้ ===หัวข้อ=== เป็นตัวแบ่งเท่านั้น:
@@ -134,6 +193,9 @@ export default function GenerateLessonPlanPage() {
   const [plannedWeek, setPlannedWeek] = useState<number | null>(null)
   const [selectedInds, setSelectedInds] = useState<Set<string>>(new Set())
   const [indTypeTab, setIndTypeTab] = useState<'all' | 'interim' | 'final'>('all')
+  const [selectedExtras, setSelectedExtras] = useState<Set<string>>(new Set())
+  const [customNote, setCustomNote] = useState('')
+  const [extraCopied, setExtraCopied] = useState<string | null>(null)
   const [generatedPrompt, setGeneratedPrompt] = useState('')
   const [copied, setCopied] = useState(false)
 
@@ -217,8 +279,30 @@ export default function GenerateLessonPlanPage() {
       topic: topic.trim(),
       indicators: chosenInds,
       duration,
+      extras: PROMPT_EXTRAS.filter(x => selectedExtras.has(x.key)).map(x => x.text),
+      customNote,
     })
     setGeneratedPrompt(prompt)
+  }
+
+  function toggleExtra(key: string) {
+    setSelectedExtras(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+    setGeneratedPrompt('')
+  }
+
+  // copy ท่อนเดียวแบบ standalone — ไว้วางต่อท้ายในแชท AI เดิมเพื่อปรับแผนที่ได้มาแล้ว
+  async function copyExtraStandalone(key: string) {
+    const extra = PROMPT_EXTRAS.find(x => x.key === key)
+    if (!extra) return
+    await navigator.clipboard.writeText(
+      `จากแผนการสอนที่ตอบไปก่อนหน้า ช่วยปรับกิจกรรมการเรียนรู้เพิ่มเติมตามนี้ โดยคงรูปแบบ ===หัวข้อ=== เดิมไว้ทุกหัวข้อ:\n${extra.text}`
+    )
+    setExtraCopied(key)
+    setTimeout(() => setExtraCopied(null), 2000)
   }
 
   async function copyPrompt() {
@@ -424,6 +508,37 @@ export default function GenerateLessonPlanPage() {
               </div>
             </div>
           )}
+
+          {/* Prompt extras — ท่อนเสริมให้ครูเลือกแทรก เพิ่มความหลากหลาย/แก้ปัญหาเฉพาะห้อง */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-gray-600">
+              พรอมต์เสริม <span className="text-gray-400">(เลือกได้หลายแบบ — หรือกดไอคอน copy เพื่อเอาท่อนเดียวไปวางต่อท้ายแผนที่ AI ตอบแล้ว)</span>
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              {PROMPT_EXTRAS.map(x => (
+                <div key={x.key}
+                  className={`flex items-start gap-2 rounded-xl border px-2.5 py-2 transition-colors ${selectedExtras.has(x.key) ? 'border-violet-400 bg-violet-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                  <button type="button" onClick={() => toggleExtra(x.key)} className="flex items-start gap-2 flex-1 text-left">
+                    <input type="checkbox" readOnly checked={selectedExtras.has(x.key)}
+                      className="mt-0.5 accent-violet-600 flex-shrink-0 pointer-events-none" />
+                    <span>
+                      <span className={`block text-xs font-semibold ${selectedExtras.has(x.key) ? 'text-violet-700' : 'text-gray-700'}`}>{x.label}</span>
+                      <span className="block text-[10px] text-gray-400 leading-snug">{x.desc}</span>
+                    </span>
+                  </button>
+                  <button type="button" onClick={() => copyExtraStandalone(x.key)}
+                    title="copy เฉพาะท่อนนี้ ไปวางต่อท้ายในแชท AI เดิม"
+                    className={`flex-shrink-0 p-1 rounded-md transition-colors ${extraCopied === x.key ? 'text-green-600' : 'text-gray-300 hover:text-gray-500'}`}>
+                    {extraCopied === x.key ? <Check size={13} /> : <Copy size={13} />}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <textarea value={customNote} onChange={e => { setCustomNote(e.target.value); setGeneratedPrompt('') }}
+              placeholder="คำแนะนำเพิ่มเติมถึง AI (ถ้ามี) เช่น ห้องนี้มีนักเรียน 35 คน โต๊ะจัดเป็นกลุ่มอยู่แล้ว..."
+              rows={2}
+              className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-300 resize-none" />
+          </div>
 
           {/* Generate prompt */}
           <button onClick={handleGenerate} disabled={!moduleId || !topic.trim()}

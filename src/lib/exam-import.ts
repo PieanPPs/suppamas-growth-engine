@@ -1,47 +1,114 @@
 // Prompt Kit: ระบบเขียนพรอมต์ให้ครูเอาไปใช้กับเว็บ AI ฟรี (ChatGPT/Gemini/Claude)
 // แล้วรับผลลัพธ์กลับมาแตกเป็นข้อสอบรายข้อ — ครูไม่ต้องพิมพ์เอง งบ 0 บาท
 
+export type ExamQType = 'mc4' | 'truefalse' | 'fill' | 'short' | 'mixed'
+
+export const EXAM_QTYPES: { key: ExamQType; label: string; desc: string }[] = [
+  { key: 'mc4', label: 'ปรนัย 4 ตัวเลือก', desc: 'ก ข ค ง — ตรวจในระบบได้เต็มรูปแบบ' },
+  { key: 'truefalse', label: 'ถูก / ผิด', desc: 'พิจารณาข้อความว่าถูกหรือผิด' },
+  { key: 'fill', label: 'เติมคำตอบ', desc: 'โจทย์เว้นช่องว่างให้เติม' },
+  { key: 'short', label: 'อัตนัยตอบสั้น', desc: 'เขียนตอบ/แสดงวิธีทำ พร้อมแนวคำตอบ' },
+  { key: 'mixed', label: 'ผสมหลายแบบ', desc: 'ปรนัย + เติมคำ + อัตนัย ในชุดเดียว' },
+]
+
+// สไตล์โจทย์เสริม — เลือกได้หลายแบบ เพิ่มความหลากหลายของข้อสอบ
+export const EXAM_STYLES: { key: string; label: string; text: string }[] = [
+  { key: 'situation', label: 'โจทย์สถานการณ์/ชีวิตจริง', text: 'ออกโจทย์เป็นสถานการณ์ในชีวิตจริงของนักเรียน (เช่น การซื้อของ กิจกรรมที่โรงเรียน) อย่างน้อยครึ่งหนึ่งของชุด แทนโจทย์ถามตรง ๆ' },
+  { key: 'hots', label: 'เน้นคิดวิเคราะห์ (HOTS)', text: 'เน้นข้อสอบระดับคิดวิเคราะห์/นำไปใช้ (ไม่ใช่ถามความจำอย่างเดียว) อย่างน้อย 40% ของชุด โดยให้โจทย์ต้องตีความหรือเชื่อมโยงมากกว่า 1 ขั้น' },
+  { key: 'difficulty', label: 'คละความยาก 40/40/20', text: 'คละระดับความยาก: ง่าย 40% ปานกลาง 40% ยาก 20% เรียงจากง่ายไปยาก' },
+  { key: 'local', label: 'บริบทท้องถิ่น', text: 'สอดแทรกบริบทท้องถิ่นใกล้ตัวนักเรียน (ชุมชน ตลาด อาชีพในจังหวัดสมุทรสาคร) ในโจทย์บางข้อเพื่อให้นักเรียนรู้สึกใกล้ตัว' },
+  { key: 'data', label: 'โจทย์อ่านตาราง/ข้อมูล', text: 'มีโจทย์ที่ให้อ่านค่าจากตารางหรือชุดข้อมูลสั้น ๆ (เขียนตารางเป็นข้อความในตัวโจทย์ได้) อย่างน้อย 2-3 ข้อ เพื่อฝึกการอ่านข้อมูล' },
+]
+
 export interface ExamPromptOptions {
   subjectName: string
   grade?: string | null
   count: number
   indicators: { code: string; description: string }[]
+  qtype?: ExamQType
+  styles?: string[]  // ข้อความสไตล์ที่เลือก (จาก EXAM_STYLES.text)
 }
 
 export function buildExamPrompt(opts: ExamPromptOptions): string {
+  const qtype = opts.qtype ?? 'mc4'
   const indicatorLines = opts.indicators.length
     ? opts.indicators.map(i => `- ${i.code}: ${i.description}`).join('\n')
     : '- (ตามเนื้อหาวิชา)'
+  const ind1 = opts.indicators[0]?.code ?? 'ป.5/1'
+  const ind2 = opts.indicators[1]?.code ?? ind1
+
+  const mcExample = (no: number, ans: string) => `ข้อ: ${no}
+ตัวชี้วัด: ${no === 1 ? ind1 : ind2}
+คำถาม: (โจทย์ข้อที่ ${no})
+ก: (ตัวเลือก)
+ข: (ตัวเลือก)
+ค: (ตัวเลือก)
+ง: (ตัวเลือก)
+เฉลย: ${ans}
+---`
+  const plainExample = (no: number, questionHint: string, answerHint: string) => `ข้อ: ${no}
+ตัวชี้วัด: ${no === 1 ? ind1 : ind2}
+คำถาม: ${questionHint}
+เฉลย: ${answerHint}
+---`
+
+  // กติกากระจายเฉลย — แก้ปัญหา AI เฉลย "ก" รัวทั้งชุด: สั่งชัด + ให้ตรวจนับก่อนส่ง
+  const mcDistributionRules = `- **กระจายเฉลยให้สมดุลระหว่าง ก ข ค ง** (แต่ละตัวเลือกประมาณ 25% ของทั้งชุด) ห้ามเทเฉลยไปที่ตัวเลือกใดตัวเลือกหนึ่ง และห้ามเฉลยตัวเดียวกันติดกันเกิน 2 ข้อ
+- ก่อนส่งคำตอบ ให้ตรวจนับจำนวนเฉลยของแต่ละตัวเลือกว่าใกล้เคียงกันจริง ถ้าไม่สมดุลให้สลับตำแหน่งตัวเลือกในข้อนั้นก่อนส่ง (เฉลยในตัวอย่างรูปแบบด้านล่างเป็นแค่ตัวอย่าง ไม่ใช่รูปแบบที่ต้องทำตาม)`
+
+  const typeConfig: Record<ExamQType, { title: string; rules: string; example: string }> = {
+    mc4: {
+      title: `ข้อสอบปรนัย 4 ตัวเลือก จำนวน ${opts.count} ข้อ`,
+      rules: mcDistributionRules,
+      example: `${mcExample(1, 'ค')}\n${mcExample(2, 'ข')}`,
+    },
+    truefalse: {
+      title: `ข้อสอบแบบถูก/ผิด จำนวน ${opts.count} ข้อ`,
+      rules: `- แต่ละข้อเป็นข้อความให้นักเรียนพิจารณาว่า ถูก หรือ ผิด
+- กระจายเฉลย "ถูก" และ "ผิด" ให้ใกล้เคียงกัน ห้ามเฉลยเดียวกันติดกันเกิน 3 ข้อ
+- ข้อความที่ผิดต้องผิดจริงชัดเจน ไม่กำกวม`,
+      example: `${plainExample(1, '(ข้อความให้พิจารณา)', 'ถูก')}\n${plainExample(2, '(ข้อความให้พิจารณา)', 'ผิด')}`,
+    },
+    fill: {
+      title: `ข้อสอบแบบเติมคำตอบ จำนวน ${opts.count} ข้อ`,
+      rules: `- โจทย์เว้นช่องว่างด้วย ______ ให้นักเรียนเติมคำตอบ
+- เฉลยเป็นคำตอบสั้น ๆ ที่ชัดเจน มีคำตอบถูกเพียงแบบเดียว (ถ้ามีหลายรูปแบบที่ยอมรับได้ ให้เขียนคั่นด้วย "หรือ")`,
+      example: `${plainExample(1, '(โจทย์ที่มี ______ ให้เติม)', '(คำตอบ)')}\n${plainExample(2, '(โจทย์ที่มี ______ ให้เติม)', '(คำตอบ)')}`,
+    },
+    short: {
+      title: `ข้อสอบอัตนัยตอบสั้น/แสดงวิธีทำ จำนวน ${opts.count} ข้อ`,
+      rules: `- โจทย์ให้นักเรียนเขียนตอบสั้น ๆ หรือแสดงวิธีทำ
+- เฉลยเขียนเป็น "แนวคำตอบ" ที่ครูใช้ตรวจได้ กระชับไม่เกิน 2-3 บรรทัด พร้อมประเด็นที่ต้องมีในคำตอบ`,
+      example: `${plainExample(1, '(โจทย์เขียนตอบ/แสดงวิธีทำ)', '(แนวคำตอบ: ประเด็นที่ต้องมี...)')}\n${plainExample(2, '(โจทย์เขียนตอบ/แสดงวิธีทำ)', '(แนวคำตอบ: ...)')}`,
+    },
+    mixed: {
+      title: `ข้อสอบผสม จำนวน ${opts.count} ข้อ — แบ่งเป็น ปรนัย 4 ตัวเลือกประมาณ 60% เติมคำตอบประมาณ 20% และอัตนัยตอบสั้นประมาณ 20% (เรียงปรนัยก่อน ตามด้วยเติมคำ แล้วจึงอัตนัย เลขข้อต่อเนื่องกัน)`,
+      rules: `- ข้อปรนัยต้องมีตัวเลือก ก ข ค ง ครบ / ข้อเติมคำและอัตนัยไม่ต้องมีตัวเลือก
+${mcDistributionRules}
+- เฉลยข้อเติมคำเป็นคำตอบสั้นชัดเจน / เฉลยข้ออัตนัยเขียนเป็นแนวคำตอบกระชับ`,
+      example: `${mcExample(1, 'ค')}\n${plainExample(2, '(โจทย์ที่มี ______ ให้เติม)', '(คำตอบ)')}`,
+    },
+  }
+  const cfg = typeConfig[qtype]
+
+  const styleBlock = opts.styles?.length
+    ? `\nสไตล์โจทย์ที่ครูต้องการ (ต้องทำตามทุกข้อกำหนด):\n${opts.styles.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n`
+    : ''
+
   return `คุณเป็นครูผู้เชี่ยวชาญการออกข้อสอบตามหลักสูตรแกนกลางของไทย
-ช่วยสร้างข้อสอบปรนัย 4 ตัวเลือก จำนวน ${opts.count} ข้อ
+ช่วยสร้าง${cfg.title}
 วิชา: ${opts.subjectName}${opts.grade ? ` ระดับชั้น ${opts.grade}` : ''}
 ครอบคลุมตัวชี้วัดต่อไปนี้ และกระจายจำนวนข้อให้ครบทุกตัวชี้วัด:
 ${indicatorLines}
-
+${styleBlock}
 ข้อกำหนดสำคัญ:
 - ภาษาเหมาะกับวัยผู้เรียน โจทย์ชัดเจน ตัวลวงสมเหตุสมผล
+${cfg.rules}
 - ตอบกลับในรูปแบบด้านล่างนี้เท่านั้น ห้ามมีข้อความอื่นนำหน้าหรือต่อท้าย
 - **บังคับ**: หลังเฉลยของทุกข้อ ต้องมีบรรทัด --- คั่นเสมอ ไม่มีข้อยกเว้น
 
 ตัวอย่างรูปแบบ (ทำ ${opts.count} ข้อ ต่อกันแบบนี้):
-ข้อ: 1
-ตัวชี้วัด: ${opts.indicators[0]?.code ?? 'ป.5/1'}
-คำถาม: (โจทย์ข้อที่ 1)
-ก: (ตัวเลือก)
-ข: (ตัวเลือก)
-ค: (ตัวเลือก)
-ง: (ตัวเลือก)
-เฉลย: ก
----
-ข้อ: 2
-ตัวชี้วัด: ${opts.indicators[1]?.code ?? opts.indicators[0]?.code ?? 'ป.5/1'}
-คำถาม: (โจทย์ข้อที่ 2)
-ก: (ตัวเลือก)
-ข: (ตัวเลือก)
-ค: (ตัวเลือก)
-ง: (ตัวเลือก)
-เฉลย: ข
----`
+${cfg.example}`
 }
 
 export interface ParsedExamItem {
@@ -63,8 +130,15 @@ const LABELS: { key: keyof ParsedExamItem | 'no'; re: RegExp }[] = [
   { key: 'choice_b', re: /^ข\s*[.)\]:：]\s*(.*)/ },
   { key: 'choice_c', re: /^ค\s*[.)\]:：]\s*(.*)/ },
   { key: 'choice_d', re: /^ง\s*[.)\]:：]\s*(.*)/ },
-  { key: 'answer', re: /^เฉลย\s*[:：]?\s*([กขคง])/ },
+  // เฉลยเป็นข้อความอิสระ — รองรับทั้งปรนัย (ก/ข/ค/ง) ถูก/ผิด เติมคำ และแนวคำตอบอัตนัย
+  { key: 'answer', re: /^เฉลย\s*[:：]?\s*(.+)/ },
 ]
+
+/** ถ้าเฉลยขึ้นต้นด้วยตัวเลือกปรนัยตามด้วยตัวคั่น/จบบรรทัด (เช่น "ก" "ข." "ค) เพราะ...") เก็บแค่ตัวอักษร — กัน AI แถมคำอธิบายท้ายเฉลย */
+function normalizeAnswer(raw: string): string {
+  const m = raw.trim().match(/^([กขคง])(?:\s*[.)\]:：]|\s|$)/)
+  return m ? m[1] : raw.trim()
+}
 
 /** แตกข้อความที่วางกลับจากเว็บ AI (หรือข้อสอบเก่าที่จัดรูปแบบเดียวกัน) เป็นรายข้อ */
 export function parseExamText(text: string): { items: ParsedExamItem[]; warnings: string[] } {
@@ -98,8 +172,9 @@ export function parseExamText(text: string): { items: ParsedExamItem[]; warnings
           item.item_no = parseInt(m[1], 10)
           lastField = null
         } else if (key === 'answer') {
-          item.answer = m[1]
-          lastField = null
+          // เก็บดิบไว้ก่อน เผื่อแนวคำตอบอัตนัยยาวหลายบรรทัด (normalize ตอนจบ block)
+          item.answer = m[1].trim()
+          lastField = 'answer'
         } else {
           item[key] = m[1].trim() as never
           lastField = key
@@ -114,6 +189,7 @@ export function parseExamText(text: string): { items: ParsedExamItem[]; warnings
 
     if (!matchedAny || !item.question) continue
     if (!item.item_no) item.item_no = items.length + 1
+    if (item.answer) item.answer = normalizeAnswer(item.answer)
     if (!item.answer) warnings.push(`ข้อ ${item.item_no}: ไม่พบเฉลย`)
     items.push(item)
   }

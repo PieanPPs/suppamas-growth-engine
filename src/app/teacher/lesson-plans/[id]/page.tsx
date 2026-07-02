@@ -8,9 +8,10 @@ import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
 import {
   Loader2, ChevronLeft, Printer, CalendarDays, Check, Pencil, X,
-  NotebookPen, Save, Send, RotateCcw, CheckCircle2, AlertCircle, Clock, Layers,
+  NotebookPen, Save, Send, RotateCcw, CheckCircle2, AlertCircle, Clock, Layers, FileText,
 } from 'lucide-react'
 import Link from 'next/link'
+import { WorksheetPromptKit } from '@/components/worksheets/worksheet-prompt-kit'
 
 type DraftPlan = Pick<LessonPlan,
   'topic' | 'subject' | 'grade' |
@@ -100,6 +101,9 @@ export default function LessonPlanDetailPage() {
 
   // Submit / status
   const [submitting, setSubmitting] = useState(false)
+
+  // Worksheet prompt kit modal
+  const [worksheetOpen, setWorksheetOpen] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -273,6 +277,10 @@ export default function LessonPlanDetailPage() {
               <Pencil size={13} /> แก้ไขแผน
             </button>
           )}
+          <button onClick={() => setWorksheetOpen(true)}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-2 rounded-lg">
+            <FileText size={13} /> สร้างใบงาน
+          </button>
           <Link href={`/teacher/lesson-plans/${id}/print`}
             className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold px-3 py-2 rounded-lg">
             <Printer size={13} /> พิมพ์แผน
@@ -643,6 +651,8 @@ export default function LessonPlanDetailPage() {
           <p className="text-xs text-amber-700 font-semibold text-center">บันทึกเรียบร้อย ✓</p>
         )}
       </div>
+
+      {worksheetOpen && <WorksheetPromptKit plan={plan} onClose={() => setWorksheetOpen(false)} />}
     </div>
   )
 }

@@ -63,7 +63,7 @@ export function ImportItems({
                     <span className="font-bold text-gray-500 flex-shrink-0">{it.item_no}.</span>
                     <span className="text-gray-700 flex-1 truncate">{it.question}</span>
                     {it.indicator_code && <span className="text-[10px] font-mono bg-blue-50 text-blue-600 px-1 rounded flex-shrink-0">{it.indicator_code}</span>}
-                    <span className={`text-[10px] font-bold flex-shrink-0 ${it.answer ? 'text-green-600' : 'text-red-500'}`}>
+                    <span className={`text-[10px] font-bold flex-shrink-0 max-w-[30%] truncate ${it.answer ? 'text-green-600' : 'text-red-500'}`}>
                       {it.answer ? `เฉลย ${it.answer}` : 'ไม่มีเฉลย'}
                     </span>
                   </div>
