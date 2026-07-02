@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Test, TestItem, Course } from '@/lib/types'
+import { Test, TestItem, Course, School } from '@/lib/types'
+import { getSchoolId } from '@/lib/school'
+import { fetchLogoForDocx } from '@/lib/lesson-plan-docx'
 import { Loader2, Printer, ArrowLeft, FileText } from 'lucide-react'
 import Link from 'next/link'
 import type { Paragraph, Table as DocxTable } from 'docx'
@@ -16,20 +18,24 @@ export default function PrintExamPage() {
   const params = useParams()
   const testId = params.id as string
   const supabase = createClient()
+  const schoolId = getSchoolId()
   const [test, setTest] = useState<Test | null>(null)
   const [items, setItems] = useState<TestItem[]>([])
   const [course, setCourse] = useState<Course | null>(null)
+  const [school, setSchool] = useState<School | null>(null)
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     async function load() {
-      const [{ data: t }, { data: it }] = await Promise.all([
+      const [{ data: t }, { data: it }, { data: sc }] = await Promise.all([
         supabase.from('tests').select('*').eq('id', testId).single(),
         supabase.from('test_items').select('*').eq('test_id', testId).order('item_no'),
+        supabase.from('schools').select('*').eq('id', schoolId).maybeSingle(),
       ])
       setTest(t)
       setItems(it ?? [])
+      setSchool(sc as School)
       if (t) {
         const { data: c } = await supabase.from('courses').select('*').eq('subject_key', t.subject).single()
         setCourse(c)
@@ -38,6 +44,10 @@ export default function PrintExamPage() {
     }
     load()
   }, [testId])
+
+  const logoUrl = school?.logo_path
+    ? supabase.storage.from('school-assets').getPublicUrl(school.logo_path).data.publicUrl
+    : null
 
   // answer key grouped by indicator
   const byIndicator = new Map<string, TestItem[]>()
@@ -53,11 +63,12 @@ export default function PrintExamPage() {
     try {
       const {
         AlignmentType, BorderStyle, Document,
-        PageBreak, Packer, Paragraph, Table,
+        ImageRun, PageBreak, Packer, Paragraph, Table,
         TableCell, TableRow, TextRun, WidthType,
         convertInchesToTwip,
       } = await import('docx')
 
+      const logo = logoUrl ? await fetchLogoForDocx(logoUrl) : null
       const FONT = 'TH Sarabun New'
       const sz = (pt: number) => pt * 2 // docx uses half-points
 
@@ -164,7 +175,16 @@ export default function PrintExamPage() {
             }
           },
           children: ([
-            line('โรงเรียนอนุสรณ์ศุภมาศ', { size: 16, bold: true, center: true }),
+            ...(logo ? [new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [new ImageRun({
+                type: 'png',
+                data: logo.data,
+                transformation: { width: logo.width, height: logo.height },
+                altText: { title: 'School logo', description: 'โลโก้โรงเรียน', name: 'logo' },
+              })],
+            })] : []),
+            line(school?.name ?? 'โรงเรียนอนุสรณ์ศุภมาศ', { size: 16, bold: true, center: true }),
             line(`${TYPE_LABEL[test.type] ?? 'แบบทดสอบ'} · ${course?.name ?? test.subject}`, { center: true }),
             line(test.title, { bold: true, center: true }),
             line(`จำนวน ${items.length} ข้อ · คะแนนเต็ม ${test.max_score} คะแนน${test.test_date ? ` · วันที่สอบ ${test.test_date}` : ''}`, { size: 12, center: true }),
@@ -245,7 +265,13 @@ export default function PrintExamPage() {
       <div className="bg-white border border-gray-200 print:border-0 rounded-2xl print:rounded-none px-8 py-8 print:px-0 print:py-0">
         {/* ===== exam header ===== */}
         <header className="text-center border-b-2 border-gray-800 pb-3">
-          <p className="text-sm font-bold text-gray-900">โรงเรียนอนุสรณ์ศุภมาศ</p>
+          {logoUrl && (
+            <div className="flex justify-center mb-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={logoUrl} alt="โลโก้โรงเรียน" className="h-14 w-auto object-contain mx-auto" />
+            </div>
+          )}
+          <p className="text-sm font-bold text-gray-900">{school?.name ?? 'โรงเรียนอนุสรณ์ศุภมาศ'}</p>
           <p className="text-[13px] text-gray-800 mt-0.5">{TYPE_LABEL[test.type] ?? 'แบบทดสอบ'} · {course?.name ?? test.subject}</p>
           <p className="text-[13px] font-semibold text-gray-900 mt-0.5">{test.title}</p>
           <p className="text-[11px] text-gray-500 mt-1">

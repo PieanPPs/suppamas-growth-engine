@@ -1,1 +1,32 @@
 @AGENTS.md
+
+# Suppamas Growth Engine
+
+EdTech platform for Anusorn Suppamas School. Next.js App Router + TypeScript + Supabase (PostgREST). User communicates in Thai; admin/teacher-facing app.
+
+## Workflow (always follow)
+
+1. Before pushing any change: `npx tsc --noEmit` then `npm run build` — both must be clean.
+2. Commit + push after each completed fix/feature (established pattern, don't batch unrelated fixes into one commit).
+3. Any schema-affecting change requires giving the exact SQL migration to the user in the same reply — they run it manually in Supabase SQL Editor (RLS blocks anon-key DELETEs; writes/updates work fine via the app, but destructive/DDL changes go through SQL Editor).
+4. When context is getting long mid-session: proactively suggest `/compact`, or summarize + keep going, rather than waiting for it to auto-trigger. Keep this file's "Pending / open items" section current so state survives a compact or a new session.
+
+## Critical gotchas
+
+- **PostgREST hard-caps every request at 1000 rows server-side** — no client `.limit()` override works. Any table that can exceed 1000 rows must be read via `fetchAllPaged<T>()` in `src/lib/db.ts` (pages with `.range()` until a short page returns), not `.limit()`/`.select()` alone. Applies to `student_assessments`, `homework_submissions`, `trait_ratings`, `attendance`, `test_scores`, `component_scores`, `test_item_responses`, `pacing_logs`, `plan_submissions`.
+- **Upserts, not check-then-insert-or-update.** Use `.upsert(payload, { onConflict: '...' })` for write paths where a row may or may not already exist (e.g. homework submissions keyed on `student_id,module_id,lesson_plan_id`). Manual "check local state then insert-or-update" logic is fragile against stale/incomplete local state.
+- **Term-scoping analytics**: only apply `getTermStartISO()` filtering to tables that represent *per-term growing history* (`student_assessments`, `test_scores`). Do NOT term-scope `pacing_logs` / `plan_submissions` (cumulative/latest-wins state) or `lib/impact-data.ts` (all-time stakeholder metrics) — doing so makes prior-term completed work look incomplete.
+- **Indicator grouping uses `standard`** (มาตรฐาน, e.g. "ค 1.1") not `strand` (สาระ, often unset) — matches the convention on `src/app/teacher/curriculum/page.tsx`.
+- **Pacing status is per-lesson-plan**, not per-module: use `latestPacingByLessonPlan()` (keyed on `lesson_plan_id`) for lesson-plan cards, `latestPacingByModule()` (module-only rows, `lesson_plan_id IS NULL`) for module-level rollups. Don't conflate the two.
+- **`lesson_plans.planned_week`**: a module spans multiple weeks (`planned_week`..`planned_week + expected_duration_weeks - 1`); an individual lesson plan/topic can be taught in any week within that span. Legacy plans with `planned_week = null` fall back to displaying on the module's first week only.
+- Typing a Supabase client param as a narrow structural type (e.g. `SupabaseLike`) against the real client causes "type instantiation is excessively deep." Type the param `any` with a comment instead. Same error occurs with ternaries inline in a query-builder chain — use `let q = ...; if (cond) q = q.foo()` instead.
+
+## Pending / open items
+
+- [ ] Confirm these migrations have been run in Supabase SQL Editor:
+  - `ALTER TABLE lesson_plans ADD COLUMN IF NOT EXISTS planned_week INT;`
+  - `ALTER TABLE pacing_logs ADD COLUMN IF NOT EXISTS lesson_plan_id UUID REFERENCES lesson_plans(id);`
+  - `lesson_plans.teach_dates` migration (add `teach_dates date[]`, backfill, drop old `teach_date`).
+- [ ] Exam print/export page (`src/app/teacher/tests/...print...`) needs the same format as lesson plans: school logo + TH Sarabun font. Not started.
+- [ ] Open risk, unconfirmed by user: any exams graded under the OLD tap-correct grading model (before the "tap = wrong" flip) will show inflated scores under the new model. Need to check `test_item_responses` for pre-flip data if this matters historically.
+
