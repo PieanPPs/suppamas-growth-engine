@@ -125,7 +125,7 @@ export default function LessonPlanPrintPage() {
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          @page { margin: 0.8cm 1.5cm 1.5cm; size: A4; }
+          @page { margin: 0.3cm 1.5cm 1cm; size: A4; }
         }
       `}</style>
 
@@ -141,17 +141,17 @@ export default function LessonPlanPrintPage() {
         </button>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 pt-2 pb-6 print:pt-0 text-gray-900 font-sarabun">
+      <div className="max-w-2xl mx-auto px-4 pt-0 pb-6 text-gray-900 font-sarabun">
         {/* Logo + title */}
         {logoUrl && (
-          <div className="flex justify-center mb-1">
+          <div className="flex justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={logoUrl} alt="โลโก้โรงเรียน" className="h-16 w-auto object-contain" />
           </div>
         )}
         <p className="text-center text-[16px] font-bold">{school?.name ?? 'โรงเรียน'}</p>
-        <p className="text-center text-[18px] font-bold mt-1">แผนการจัดการเรียนรู้</p>
-        <p className="text-[16px] mt-3">
+        <p className="text-center text-[16px] font-bold">แผนการจัดการเรียนรู้</p>
+        <p className="text-[16px] mt-2">
           หน่วยการเรียนรู้&nbsp;&nbsp;&nbsp;&nbsp;{mod ? mod.title : '..............................'}
         </p>
 
@@ -202,12 +202,12 @@ export default function LessonPlanPrintPage() {
           <div>
             <p className="mb-6">ลงชื่อ ................................................</p>
             <p>( {teacher?.name ?? '......................................'} )</p>
-            <p className="text-[14px] text-gray-500">ครูผู้สอน</p>
+            <p className="text-[16px] text-gray-500">ครูผู้สอน</p>
           </div>
           <div>
             <p className="mb-6">ลงชื่อ ................................................</p>
             <p>( {school?.director_name ?? '......................................'} )</p>
-            <p className="text-[14px] text-gray-500">ผู้อำนวยการ{school?.name ?? 'โรงเรียน'}</p>
+            <p className="text-[16px] text-gray-500">ผู้อำนวยการ{school?.name ?? 'โรงเรียน'}</p>
           </div>
         </div>
       </div>

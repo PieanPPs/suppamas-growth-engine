@@ -118,7 +118,7 @@ export function buildLessonPlanBlock(docx: DocxLib, input: LessonPlanDocInput) {
   nodes.push(
     line(schoolName, { size: 16, bold: true, center: true }),
     blank(),
-    line('แผนการจัดการเรียนรู้', { size: 18, bold: true, center: true }),
+    line('แผนการจัดการเรียนรู้', { size: 16, bold: true, center: true }),
     line(`หน่วยการเรียนรู้          ${moduleTitle ?? '..............................'}`, { spacingAfter: 60 }),
     headerTable,
     blank(),
@@ -162,9 +162,9 @@ export function buildLessonPlanBlock(docx: DocxLib, input: LessonPlanDocInput) {
     new Paragraph({
       alignment: AlignmentType.CENTER,
       children: [
-        run('ครูผู้สอน', { size: 14 }),
+        run('ครูผู้สอน', { size: 16 }),
         run('                              '),
-        run(`ผู้อำนวยการ${schoolName}`, { size: 14 }),
+        run(`ผู้อำนวยการ${schoolName}`, { size: 16 }),
       ],
     }),
   )
