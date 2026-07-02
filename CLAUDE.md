@@ -27,6 +27,6 @@ EdTech platform for Anusorn Suppamas School. Next.js App Router + TypeScript + S
   - `ALTER TABLE lesson_plans ADD COLUMN IF NOT EXISTS planned_week INT;`
   - `ALTER TABLE pacing_logs ADD COLUMN IF NOT EXISTS lesson_plan_id UUID REFERENCES lesson_plans(id);`
   - `lesson_plans.teach_dates` migration (add `teach_dates date[]`, backfill, drop old `teach_date`).
-- [ ] Exam print/export page (`src/app/teacher/tests/...print...`) needs the same format as lesson plans: school logo + TH Sarabun font. Not started.
+- [x] Exam print/export page now pulls real school name + logo (both the HTML preview and Word export), matching the lesson plan print page. Font was already TH Sarabun in both. Done in commit `0c7cb35`.
 - [ ] Open risk, unconfirmed by user: any exams graded under the OLD tap-correct grading model (before the "tap = wrong" flip) will show inflated scores under the new model. Need to check `test_item_responses` for pre-flip data if this matters historically.
 
