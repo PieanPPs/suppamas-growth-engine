@@ -165,7 +165,7 @@ export default function LessonPlanPrintPage() {
             </tr>
             <tr className="border-b-2 border-gray-800">
               <td className="py-1">
-                ครูผู้สอน&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{teacher?.name ?? '..............................'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;วันที่สอน&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{teachDate}
+                ครูผู้สอน&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{teacher?.name ?? '..............................'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;วันที่สอน&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{teachDate}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;เวลาเรียน&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{plan.duration ?? '1 ชั่วโมง'}
               </td>
             </tr>
           </tbody>

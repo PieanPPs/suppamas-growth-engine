@@ -74,6 +74,12 @@ export default function LessonPlanDetailPage() {
   const [savingWeek, setSavingWeek] = useState(false)
   const [weekSaved, setWeekSaved] = useState(false)
 
+  // Duration — e.g. "1 ชั่วโมง", shown in the printed header table
+  const [editingDuration, setEditingDuration] = useState(false)
+  const [durationInput, setDurationInput] = useState('')
+  const [savingDuration, setSavingDuration] = useState(false)
+  const [durationSaved, setDurationSaved] = useState(false)
+
   // Full edit mode
   const [editMode, setEditMode] = useState(false)
   const [draft, setDraft] = useState<DraftPlan>({
@@ -103,6 +109,7 @@ export default function LessonPlanDetailPage() {
       setPlan(lp)
       setDateList(lp.teach_dates ?? [])
       setWeekInput(lp.planned_week)
+      setDurationInput(lp.duration ?? '1 ชั่วโมง')
       setPostNote(lp.post_lesson_note ?? '')
       setSuggestion(lp.suggestion ?? '')
       if (lp.module_id) {
@@ -186,6 +193,18 @@ export default function LessonPlanDetailPage() {
     setEditingWeek(false)
     setWeekSaved(true)
     setTimeout(() => setWeekSaved(false), 2000)
+  }
+
+  async function saveDuration() {
+    if (!plan) return
+    setSavingDuration(true)
+    const { error } = await supabase.from('lesson_plans').update({ duration: durationInput }).eq('id', plan.id)
+    setSavingDuration(false)
+    if (error) { alert(`บันทึกเวลาเรียนไม่สำเร็จ: ${error.message}`); return }
+    setPlan(p => p ? { ...p, duration: durationInput } : p)
+    setEditingDuration(false)
+    setDurationSaved(true)
+    setTimeout(() => setDurationSaved(false), 2000)
   }
 
   async function savePostLesson() {
@@ -458,6 +477,41 @@ export default function LessonPlanDetailPage() {
           </div>
         )
       })()}
+
+      {/* Duration — shown in the "เวลาเรียน" cell of the printed header table */}
+      <div className="bg-white border border-gray-200 rounded-2xl px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Clock size={16} className="text-indigo-500" />
+            <p className="text-sm font-semibold text-gray-700">เวลาเรียน</p>
+          </div>
+          {!editingDuration && (
+            <button onClick={() => setEditingDuration(true)}
+              className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
+              <Pencil size={11} /> แก้ไข
+            </button>
+          )}
+        </div>
+        {editingDuration ? (
+          <div className="flex gap-2 mt-2">
+            <select value={durationInput} onChange={e => setDurationInput(e.target.value)}
+              className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-300">
+              {['1 ชั่วโมง', '2 ชั่วโมง', '50 นาที', '60 นาที', '90 นาที'].map(d => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+            <button onClick={saveDuration} disabled={savingDuration}
+              className="bg-violet-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1 disabled:opacity-50">
+              {savingDuration ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} บันทึก
+            </button>
+            <button onClick={() => { setEditingDuration(false); setDurationInput(plan.duration ?? '1 ชั่วโมง') }}
+              className="text-xs text-gray-400 hover:text-gray-600 px-2">ยกเลิก</button>
+          </div>
+        ) : (
+          <p className="text-sm mt-1 text-indigo-700 font-semibold">{plan.duration ?? '1 ชั่วโมง'}</p>
+        )}
+        {durationSaved && <p className="text-xs text-green-600 mt-1">บันทึกแล้ว ✓</p>}
+      </div>
 
       {/* Plan sections */}
       <div className="bg-white border border-gray-200 rounded-2xl px-4 py-4 space-y-4 divide-y divide-gray-100">

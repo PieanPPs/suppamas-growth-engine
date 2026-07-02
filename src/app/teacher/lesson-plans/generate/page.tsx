@@ -253,6 +253,7 @@ export default function GenerateLessonPlanPage() {
       grade: course?.grade ?? null,
       planned_week: plannedWeek,
       teach_dates: null,
+      duration,
       ...parsed,
     }).select().single()
 

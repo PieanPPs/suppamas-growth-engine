@@ -111,7 +111,7 @@ export function buildLessonPlanBlock(docx: DocxLib, input: LessonPlanDocInput) {
     rows: [
       headerRow(`แผนการเรียนรู้ที่ ${plan.plan_number}     เรื่อง ${plan.topic}`),
       headerRow(`รายวิชา     ${plan.subject ?? ''}     ชั้น     ${plan.grade ?? ''}     ${termName ?? ''}     ปีการศึกษา ${academicYear ?? ''}`),
-      headerRow(`ครูผู้สอน     ${teacherName ?? '..............................'}     วันที่สอน     ${formatThaiDates(plan.teach_dates)}`),
+      headerRow(`ครูผู้สอน     ${teacherName ?? '..............................'}     วันที่สอน     ${formatThaiDates(plan.teach_dates)}     เวลาเรียน     ${plan.duration ?? '1 ชั่วโมง'}`),
     ],
   })
 
