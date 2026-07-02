@@ -66,12 +66,6 @@ function PassFail({ value, onChange }: { value: 0 | 1 | 2; onChange: (v: 0 | 1 |
   )
 }
 
-function startOfTodayISO(): string {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  return d.toISOString()
-}
-
 function todayDateStr(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -225,7 +219,8 @@ export default function AssessmentPage() {
     setLessonPlanId(lpId || null)
   }
 
-  // init grades + prefill today's existing records (one per student/module/day)
+  // init grades + prefill each student's existing record for this lesson plan — one record
+  // per (student, lesson plan) ever, editable any time, not scoped to "today"
   useEffect(() => {
     if (!selectedModule || visibleStudents.length === 0) { setGrades({}); return }
     let cancelled = false
@@ -235,10 +230,12 @@ export default function AssessmentPage() {
         .select('*')
         .eq('school_id', schoolId)
         .eq('module_id', selectedModule)
-        .gte('created_at', startOfTodayISO())
+        .order('created_at', { ascending: true })
       if (lessonPlanId) q = q.eq('lesson_plan_id', lessonPlanId)
       const { data: existing } = await q
       if (cancelled) return // a newer room/module switch already fired — discard this stale response
+      // ascending order + Map overwrite → last write wins, so leftover duplicates from
+      // before this fix (same student assessed on multiple days) resolve to the latest one
       const byStudent = new Map<string, StudentAssessment>()
       ;(existing ?? []).forEach((a: StudentAssessment) => byStudent.set(a.student_id, a))
 
@@ -337,12 +334,13 @@ export default function AssessmentPage() {
       focus_color: grade.focus_color,
       soft_skill_score: grade.soft_skill_score,
     }
-    if (grade.recordId) {
-      const { error } = await supabase.from('student_assessments').update(payload).eq('id', grade.recordId)
-      if (error) return { id: null, error: error.message }
-      return { id: grade.recordId, error: null }
-    }
-    const { data, error } = await supabase.from('student_assessments').insert(payload).select('id').single()
+    // upsert on (student, module, lesson_plan) instead of insert-or-update-by-recordId — atomic,
+    // so two devices/tabs saving the same student+plan at once can't create duplicate rows
+    const { data, error } = await supabase
+      .from('student_assessments')
+      .upsert(payload, { onConflict: 'student_id,module_id,lesson_plan_id' })
+      .select('id')
+      .single()
     if (error) return { id: null, error: error.message }
     return { id: data?.id ?? null, error: null }
   }
@@ -400,7 +398,7 @@ export default function AssessmentPage() {
     <div className="space-y-4 pb-28">
       <div>
         <h2 className="text-xl font-bold text-gray-900">บันทึกคะแนน</h2>
-        <p className="text-sm text-gray-500 mt-1">ประเมิน 3 มิติหลังจบคาบ — วันเดียวกันบันทึกซ้ำเพื่อแก้ไขได้</p>
+        <p className="text-sm text-gray-500 mt-1">ประเมิน 3 มิติหลังจบคาบ — 1 คน 1 แผนการสอน บันทึกซ้ำเพื่อแก้ไขได้ตลอด</p>
       </div>
 
       <ScoreModeSwitch />
@@ -705,7 +703,7 @@ export default function AssessmentPage() {
       {allSaved && visibleStudents.length > 0 && (
         <div className="bg-green-50 border border-green-200 rounded-2xl p-4 text-center">
           <CheckCircle2 size={28} className="text-green-500 mx-auto mb-1" />
-          <p className="text-sm font-semibold text-green-800">บันทึกครบทุกคนแล้ว! แตะการ์ดเพื่อแก้ไขได้ตลอดวันนี้</p>
+          <p className="text-sm font-semibold text-green-800">บันทึกครบทุกคนแล้ว! แตะการ์ดเพื่อแก้ไขได้ตลอดเวลา</p>
         </div>
       )}
     </div>

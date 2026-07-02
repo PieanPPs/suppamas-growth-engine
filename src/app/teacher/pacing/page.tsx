@@ -53,8 +53,9 @@ export default function PacingPage() {
         supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
         supabase.from('homework_tasks').select('*').eq('school_id', schoolId),
         // must page through — this table exceeds Supabase's 1000-row-per-request cap
+        // order by created_at ascending so a later dedupe-by-student keeps the latest record
         fetchAllPaged<StudentAssessment>(() =>
-          supabase.from('student_assessments').select('*').eq('school_id', schoolId).order('id')),
+          supabase.from('student_assessments').select('*').eq('school_id', schoolId).order('created_at')),
         supabase.from('students').select('id, class_name').eq('school_id', schoolId),
       ])
 
@@ -65,9 +66,18 @@ export default function PacingPage() {
       setHomeworkTasks(new Map((tasks ?? []).map((t: HomeworkTask) => [t.module_id, t])))
       setAllStudents((students ?? []) as Pick<Student, 'id' | 'class_name'>[])
 
+      // dedupe to one row per (student, module, lesson_plan_id) — keep the latest, since a
+      // student's exit-ticket result for a given lesson plan is a single record, not one per day.
+      // legacy rows from before that model (same student re-assessed on different days) collapse here.
+      const latestByStudentModuleLp = new Map<string, StudentAssessment>()
+      ;(assessments ?? []).forEach((a: StudentAssessment) => {
+        latestByStudentModuleLp.set(`${a.student_id}::${a.module_id}::${a.lesson_plan_id ?? ''}`, a)
+      })
+      const dedupedAssessments = Array.from(latestByStudentModuleLp.values())
+
       // exit-ticket summary per module (distinct students + avg)
       const byModule = new Map<string, StudentAssessment[]>()
-      ;(assessments ?? []).forEach((a: StudentAssessment) => {
+      dedupedAssessments.forEach((a: StudentAssessment) => {
         if (!byModule.has(a.module_id)) byModule.set(a.module_id, [])
         byModule.get(a.module_id)!.push(a)
       })
@@ -81,7 +91,7 @@ export default function PacingPage() {
 
       // exit-ticket summary per lesson plan
       const byLp = new Map<string, StudentAssessment[]>()
-      ;(assessments ?? []).forEach((a: StudentAssessment) => {
+      dedupedAssessments.forEach((a: StudentAssessment) => {
         if (!a.lesson_plan_id) return
         if (!byLp.has(a.lesson_plan_id)) byLp.set(a.lesson_plan_id, [])
         byLp.get(a.lesson_plan_id)!.push(a)
