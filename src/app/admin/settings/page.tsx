@@ -86,7 +86,13 @@ export default function SettingsPage() {
     if (logoFile) {
       const path = `${schoolId}/logo.png`
       const { error } = await supabase.storage.from('school-assets').upload(path, logoFile, { upsert: true })
-      if (!error) logoPath = path
+      if (error) {
+        // surface the real cause (e.g. missing bucket / RLS policy) instead of silently keeping the old logo
+        setLogoError(`อัพโหลดโลโก้ไม่สำเร็จ: ${error.message}`)
+        setSaving(false)
+        return
+      }
+      logoPath = path
     }
 
     // update school info

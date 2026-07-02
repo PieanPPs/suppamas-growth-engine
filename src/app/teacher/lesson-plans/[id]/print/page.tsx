@@ -151,9 +151,12 @@ export default function LessonPlanPrintPage() {
         )}
         <p className="text-center text-[16px] font-bold">{school?.name ?? 'โรงเรียน'}</p>
         <p className="text-center text-[18px] font-bold mt-1">แผนการจัดการเรียนรู้</p>
+        <p className="text-[16px] mt-3">
+          หน่วยการเรียนรู้&nbsp;&nbsp;&nbsp;&nbsp;{mod ? mod.title : '..............................'}
+        </p>
 
         {/* Header table — matches the school's official printed format */}
-        <table className="w-full text-[16px] mt-3 border-collapse">
+        <table className="w-full text-[16px] mt-1.5 border-collapse">
           <tbody>
             <tr className="border-t-2 border-b border-gray-800">
               <td className="py-1">แผนการเรียนรู้ที่ {plan.plan_number}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;เรื่อง {plan.topic}</td>
@@ -170,9 +173,6 @@ export default function LessonPlanPrintPage() {
             </tr>
           </tbody>
         </table>
-        <p className="text-[16px] mt-1.5">
-          หน่วยการเรียนรู้&nbsp;&nbsp;&nbsp;&nbsp;{mod ? mod.title : '..............................'}
-        </p>
 
         {/* Sections */}
         <Section no={1} title="มาตรฐานการเรียนรู้" body={

@@ -119,10 +119,9 @@ export function buildLessonPlanBlock(docx: DocxLib, input: LessonPlanDocInput) {
     line(schoolName, { size: 16, bold: true, center: true }),
     blank(),
     line('แผนการจัดการเรียนรู้', { size: 18, bold: true, center: true }),
-    blank(),
+    line(`หน่วยการเรียนรู้          ${moduleTitle ?? '..............................'}`, { spacingAfter: 60 }),
     headerTable,
     blank(),
-    line(`หน่วยการเรียนรู้          ${moduleTitle ?? '..............................'}`, { spacingAfter: 100 }),
     ...section(1, 'มาตรฐานการเรียนรู้', [
       plan.indicators_interim ? `1.1 ตัวชี้วัดระหว่างทาง\n${plan.indicators_interim}` : null,
       plan.indicators_final ? `1.2 ตัวชี้วัดปลายทาง\n${plan.indicators_final}` : null,
