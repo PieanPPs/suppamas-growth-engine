@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { LessonPlan, CurriculumModule, School, Teacher } from '@/lib/types'
+import { LessonPlan, CurriculumModule, School, Teacher, AcademicSettings } from '@/lib/types'
 import { getSchoolId } from '@/lib/school'
 import { loadDocxLib, fetchLogoForDocx, buildLessonPlanBlock } from '@/lib/lesson-plan-docx'
 import { Loader2, FileText, Printer } from 'lucide-react'
@@ -25,19 +25,22 @@ export default function LessonPlanPrintPage() {
   const [mod, setMod] = useState<CurriculumModule | null>(null)
   const [school, setSchool] = useState<School | null>(null)
   const [teacher, setTeacher] = useState<Teacher | null>(null)
+  const [settings, setSettings] = useState<AcademicSettings | null>(null)
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     async function load() {
-      const [{ data: p }, { data: sc }] = await Promise.all([
+      const [{ data: p }, { data: sc }, { data: st }] = await Promise.all([
         supabase.from('lesson_plans').select('*').eq('id', id).single(),
         supabase.from('schools').select('*').eq('id', schoolId).maybeSingle(),
+        supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
       ])
       if (!p) { setLoading(false); return }
       const plan = p as LessonPlan
       setPlan(plan)
       setSchool(sc as School)
+      setSettings(st as AcademicSettings | null)
       if (plan.module_id) {
         const { data: m } = await supabase.from('curriculum_modules').select('*').eq('id', plan.module_id).single()
         if (m) setMod(m as CurriculumModule)
@@ -53,6 +56,9 @@ export default function LessonPlanPrintPage() {
 
   const logoUrl = school?.logo_path
     ? supabase.storage.from('school-assets').getPublicUrl(school.logo_path).data.publicUrl
+    : null
+  const academicYear = settings?.term_start_date
+    ? String(new Date(settings.term_start_date).getFullYear() + 543)
     : null
 
   async function exportWord() {
@@ -82,6 +88,8 @@ export default function LessonPlanPrintPage() {
             teacherName: teacher?.name ?? null,
             schoolName: school?.name ?? 'โรงเรียน',
             directorName: school?.director_name ?? null,
+            termName: settings?.term_name ?? null,
+            academicYear,
             logo,
           }),
         }],
@@ -143,19 +151,27 @@ export default function LessonPlanPrintPage() {
         )}
         <p className="text-center text-[16px] font-bold">{school?.name ?? 'โรงเรียน'}</p>
         <p className="text-center text-[18px] font-bold mt-1">แผนการจัดการเรียนรู้</p>
-        <p className="text-center text-[16px] font-bold mt-0.5">
-          แผนการเรียนรู้ที่ {plan.plan_number}&nbsp;&nbsp;&nbsp;&nbsp;เรื่อง {plan.topic}
-        </p>
 
-        {/* Meta lines */}
-        <p className="text-[16px] mt-3">
-          รายวิชา&nbsp;&nbsp;&nbsp;&nbsp;{plan.subject ?? ''}&nbsp;&nbsp;&nbsp;&nbsp;ชั้น&nbsp;&nbsp;&nbsp;&nbsp;{plan.grade ?? ''}
-        </p>
-        <p className="text-[16px]">
+        {/* Header table — matches the school's official printed format */}
+        <table className="w-full text-[16px] mt-3 border-collapse">
+          <tbody>
+            <tr className="border-t-2 border-b border-gray-800">
+              <td className="py-1">แผนการเรียนรู้ที่ {plan.plan_number}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;เรื่อง {plan.topic}</td>
+            </tr>
+            <tr className="border-b border-gray-800">
+              <td className="py-1">
+                รายวิชา&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{plan.subject ?? ''}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ชั้น&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{plan.grade ?? ''}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{settings?.term_name ?? ''}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ปีการศึกษา {academicYear ?? ''}
+              </td>
+            </tr>
+            <tr className="border-b-2 border-gray-800">
+              <td className="py-1">
+                ครูผู้สอน&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{teacher?.name ?? '..............................'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;วันที่สอน&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{teachDate}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p className="text-[16px] mt-1.5">
           หน่วยการเรียนรู้&nbsp;&nbsp;&nbsp;&nbsp;{mod ? mod.title : '..............................'}
-        </p>
-        <p className="text-[16px] pb-1.5 border-b border-gray-800">
-          ครูผู้สอน&nbsp;&nbsp;&nbsp;&nbsp;{teacher?.name ?? '..............................'}&nbsp;&nbsp;&nbsp;&nbsp;วันที่สอน&nbsp;&nbsp;&nbsp;&nbsp;{teachDate}
         </p>
 
         {/* Sections */}

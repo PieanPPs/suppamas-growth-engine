@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { LessonPlan, LessonPlanStatus, CurriculumModule, School, Teacher } from '@/lib/types'
+import { LessonPlan, LessonPlanStatus, CurriculumModule, School, Teacher, AcademicSettings } from '@/lib/types'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
 import { loadDocxLib, fetchLogoForDocx, buildLessonPlanBlock } from '@/lib/lesson-plan-docx'
@@ -33,6 +33,7 @@ export default function LessonPlansPage() {
   const [modules, setModules] = useState<Map<string, CurriculumModule>>(new Map())
   const [teachers, setTeachers] = useState<Map<string, Teacher>>(new Map())
   const [school, setSchool] = useState<School | null>(null)
+  const [settings, setSettings] = useState<AcademicSettings | null>(null)
   const [loading, setLoading] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -47,16 +48,18 @@ export default function LessonPlansPage() {
         .order('module_id').order('plan_number')
       if (teacherId) q = q.eq('teacher_id', teacherId)
 
-      const [{ data: ps }, { data: mods }, { data: ts }, { data: sc }] = await Promise.all([
+      const [{ data: ps }, { data: mods }, { data: ts }, { data: sc }, { data: st }] = await Promise.all([
         q,
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId),
         supabase.from('teachers').select('*').eq('school_id', schoolId),
         supabase.from('schools').select('*').eq('id', schoolId).maybeSingle(),
+        supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
       ])
       setPlans((ps ?? []) as LessonPlan[])
       setModules(new Map(((mods ?? []) as CurriculumModule[]).map(m => [m.id, m])))
       setTeachers(new Map(((ts ?? []) as Teacher[]).map(t => [t.id, t])))
       setSchool(sc as School | null)
+      setSettings(st as AcademicSettings | null)
       setLoading(false)
     }
     load()
@@ -93,6 +96,9 @@ export default function LessonPlansPage() {
         ? supabase.storage.from('school-assets').getPublicUrl(school.logo_path).data.publicUrl
         : null
       const logo = logoUrl ? await fetchLogoForDocx(logoUrl) : null
+      const academicYear = settings?.term_start_date
+        ? String(new Date(settings.term_start_date).getFullYear() + 543)
+        : null
 
       const selectedPlans = plans.filter(p => selectedIds.has(p.id))
       const children = selectedPlans.flatMap((plan, i) => [
@@ -103,6 +109,8 @@ export default function LessonPlansPage() {
           teacherName: plan.teacher_id ? teachers.get(plan.teacher_id)?.name ?? null : null,
           schoolName: school?.name ?? 'โรงเรียน',
           directorName: school?.director_name ?? null,
+          termName: settings?.term_name ?? null,
+          academicYear,
           logo,
         }),
       ])

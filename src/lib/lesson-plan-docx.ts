@@ -8,6 +8,8 @@ export interface LessonPlanDocInput {
   teacherName: string | null
   schoolName: string
   directorName: string | null
+  termName: string | null
+  academicYear: string | null
   logo: { data: ArrayBuffer; width: number; height: number } | null
 }
 
@@ -48,8 +50,8 @@ export function fitLogoSize(width: number, height: number, maxSize: number): { w
 
 /** สร้างเนื้อหาแผนการสอน 1 แผน (Paragraph/Table[]) ตามฟอร์แมตแผนการจัดการเรียนรู้ราชการ — ใช้ได้ทั้งพิมพ์เดี่ยวและพิมพ์รวมหลายแผน */
 export function buildLessonPlanBlock(docx: DocxLib, input: LessonPlanDocInput) {
-  const { AlignmentType, Paragraph, TextRun, ImageRun, BorderStyle } = docx
-  const { plan, moduleTitle, teacherName, schoolName, directorName, logo } = input
+  const { AlignmentType, Paragraph, TextRun, ImageRun, BorderStyle, Table, TableRow, TableCell, WidthType, convertInchesToTwip } = docx
+  const { plan, moduleTitle, teacherName, schoolName, directorName, termName, academicYear, logo } = input
 
   const FONT = 'TH Sarabun New'
   const sz = (pt: number) => pt * 2 // docx uses half-points
@@ -89,18 +91,38 @@ export function buildLessonPlanBlock(docx: DocxLib, input: LessonPlanDocInput) {
     }))
   }
 
+  const THIN = { style: BorderStyle.SINGLE, size: 4, color: '000000' }
+  const NIL = { style: BorderStyle.NIL }
+  const contentWidth = 11906 - convertInchesToTwip(1) - convertInchesToTwip(1.18)
+
+  const headerRow = (text: string) => new TableRow({
+    children: [new TableCell({
+      width: { size: contentWidth, type: WidthType.DXA },
+      margins: { top: 40, bottom: 40, left: 0, right: 0 },
+      borders: { top: NIL, bottom: NIL, left: NIL, right: NIL },
+      children: [line(text)],
+    })],
+  })
+
+  const headerTable = new Table({
+    width: { size: contentWidth, type: WidthType.DXA },
+    columnWidths: [contentWidth],
+    borders: { top: THIN, bottom: THIN, left: NIL, right: NIL, insideHorizontal: THIN, insideVertical: NIL },
+    rows: [
+      headerRow(`แผนการเรียนรู้ที่ ${plan.plan_number}     เรื่อง ${plan.topic}`),
+      headerRow(`รายวิชา     ${plan.subject ?? ''}     ชั้น     ${plan.grade ?? ''}     ${termName ?? ''}     ปีการศึกษา ${academicYear ?? ''}`),
+      headerRow(`ครูผู้สอน     ${teacherName ?? '..............................'}     วันที่สอน     ${formatThaiDates(plan.teach_dates)}`),
+    ],
+  })
+
   nodes.push(
     line(schoolName, { size: 16, bold: true, center: true }),
     blank(),
     line('แผนการจัดการเรียนรู้', { size: 18, bold: true, center: true }),
-    line(`แผนการเรียนรู้ที่ ${plan.plan_number}    เรื่อง ${plan.topic}`, { size: 16, bold: true, center: true, spacingAfter: 100 }),
-    line(`รายวิชา          ${plan.subject ?? ''}          ชั้น          ${plan.grade ?? ''}`),
+    blank(),
+    headerTable,
+    blank(),
     line(`หน่วยการเรียนรู้          ${moduleTitle ?? '..............................'}`, { spacingAfter: 100 }),
-    new Paragraph({
-      spacing: { after: 100 },
-      border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000', space: 1 } },
-      children: [run(`ครูผู้สอน          ${teacherName ?? '..............................'}          วันที่สอน          ${formatThaiDates(plan.teach_dates)}`)],
-    }),
     ...section(1, 'มาตรฐานการเรียนรู้', [
       plan.indicators_interim ? `1.1 ตัวชี้วัดระหว่างทาง\n${plan.indicators_interim}` : null,
       plan.indicators_final ? `1.2 ตัวชี้วัดปลายทาง\n${plan.indicators_final}` : null,
