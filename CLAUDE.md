@@ -34,8 +34,13 @@ EdTech platform for Anusorn Suppamas School. Next.js App Router + TypeScript + S
 - [x] Lesson plan print page (single + bulk Word export) header now uses a bordered 3-row table matching the school's actual paper template (plan no./topic, subject/grade/term/year, teacher/date/duration). `duration` is editable on the plan detail page. Done in commits `d8cd8bb`, `9df64af`.
 - [ ] Open risk, unconfirmed by user: any exams graded under the OLD tap-correct grading model (before the "tap = wrong" flip) will show inflated scores under the new model. Need to check `test_item_responses` for pre-flip data if this matters historically.
 - [x] Prompt system upgrade (`5aad2fa`, no migration needed): lesson-plan prompt add-ons (`PROMPT_EXTRAS` in generate page), exam prompt answer-distribution fix + question types beyond MC (`EXAM_QTYPES`/`EXAM_STYLES` in `src/lib/exam-import.ts`, parser accepts free-text answers), worksheet prompt kit (`src/components/worksheets/worksheet-prompt-kit.tsx`, button on plan detail page).
-- [x] Exit-ticket assessment fixed to one-record-per-(student, lesson plan) model (`fce81b3`) — see gotcha above. **Needs a cleanup + constraint migration run in Supabase SQL Editor** (dedupe existing legacy duplicate rows from the old daily-reassessment behavior, then add a unique index so the new `upsert()` in `assessment/page.tsx` actually works):
+- [ ] **BLOCKING — live saves failing in production right now.** Exit-ticket assessment fixed to one-record-per-(student, lesson plan) model (`fce81b3`) — see gotcha above. Discovered in prod (2026-07-03) that a **pre-existing legacy constraint `student_assessments_one_per_day`** (never documented, predates this session's work) enforces "1 record per student per day," which directly conflicts with the new model and throws `duplicate key value violates unique constraint "student_assessments_one_per_day"` on save. Must run in Supabase SQL Editor:
   ```sql
+  -- 1) drop the old "one per day" rule — conflicts with the new one-per-lesson-plan model
+  ALTER TABLE student_assessments DROP CONSTRAINT IF EXISTS student_assessments_one_per_day;
+  DROP INDEX IF EXISTS student_assessments_one_per_day;
+
+  -- 2) dedupe existing legacy duplicate rows (from the old daily-reassessment behavior), keep latest
   DELETE FROM student_assessments
   WHERE id IN (
     SELECT id FROM (
@@ -47,9 +52,10 @@ EdTech platform for Anusorn Suppamas School. Next.js App Router + TypeScript + S
     ) t WHERE t.rn > 1
   );
 
+  -- 3) add the new constraint so upsert(onConflict: 'student_id,module_id,lesson_plan_id') works
   DROP INDEX IF EXISTS student_assessments_student_module_plan_uniq;
   CREATE UNIQUE INDEX student_assessments_student_module_plan_uniq
   ON student_assessments (student_id, module_id, lesson_plan_id) NULLS NOT DISTINCT;
   ```
-  Until this migration runs, `persistGrade()`'s `upsert(onConflict: 'student_id,module_id,lesson_plan_id')` will error (no matching unique constraint) — this is blocking, not optional.
+  Until this runs, `persistGrade()`'s `upsert()` in `assessment/page.tsx` fails for any student being re-saved on a different day than their existing record — this is actively breaking teacher saves, not just a future risk. **Before trusting any future schema-check on this table, actually inspect live constraints (e.g. `\d student_assessments` in SQL Editor) rather than assuming only what's in this file** — this constraint's existence was missed because it was never introduced by any change made in this session.
 
