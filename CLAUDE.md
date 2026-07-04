@@ -22,40 +22,27 @@ EdTech platform for Anusorn Suppamas School. Next.js App Router + TypeScript + S
 - **`lesson_plans.planned_week`**: a module spans multiple weeks (`planned_week`..`planned_week + expected_duration_weeks - 1`); an individual lesson plan/topic can be taught in any week within that span. Legacy plans with `planned_week = null` fall back to displaying on the module's first week only.
 - Typing a Supabase client param as a narrow structural type (e.g. `SupabaseLike`) against the real client causes "type instantiation is excessively deep." Type the param `any` with a comment instead. Same error occurs with ternaries inline in a query-builder chain — use `let q = ...; if (cond) q = q.foo()` instead.
 
+## User decisions (2026-07-03, do not re-ask)
+
+- **student_assessments**: one record per (student, module, lesson_plan). The blocking `one_per_day` constraint fix HAS BEEN RUN in production — saves work now.
+- **Multi-school expansion is intended within ~1 year** → security work (Supabase Auth + real RLS keyed to JWT school claim, kill client-side PIN query + public read of sensitive columns) must land before school #2.
+- **Parent report links**: add a per-family access code derived from the student's `national_id` (national IDs to be imported later). Public-UUID-only links are NOT acceptable long-term.
+- **Old tap-correct exam data**: not historically important; current data (recorded after the tap-wrong flip) is valid. No back-cleaning needed.
+
+## Roadmap (agreed via Fable audit 2026-07-03 — work top-down)
+
+Phase 1 (now): ~~run blocking migration~~ ✓ → ~~fix `supabase-multitenant.sql` recreating dead `one_per_day` index~~ ✓ → ~~schema-as-code repair file~~ ✓ (`supabase-system12-missing-schema.sql`) → dedupe audit (latest per student+module+plan) across dashboard/impact/heroes/pp5/pp6 via one shared helper in `src/lib` → PDPA: stop public read of `students.national_id` + `teachers.pin` → parent QR sheet per classroom (print page of `/report/[id]` QRs) → attendance summary into ปพ.5/ปพ.6.
+Phase 2: individual remediation plan prompt kit (from `predictive.ts` at-risk + weak indicators); NT/O-NET gap-driven prep cycle; full ปพ.5 book export; student care system (SDQ/home visits); **add academic_year/term columns to per-term tables BEFORE next term starts**; teaching supervision records.
+Phase 3: auto-compile ว.PA evidence portfolio per teacher (killer feature, data ~80% ready); multi-school enablement + shared plan/exam library; multi-year student portfolio; student self-assessment via QR.
+
 ## Pending / open items
 
-- [ ] Confirm these migrations have been run in Supabase SQL Editor:
-  - `ALTER TABLE lesson_plans ADD COLUMN IF NOT EXISTS planned_week INT;`
-  - `ALTER TABLE pacing_logs ADD COLUMN IF NOT EXISTS lesson_plan_id UUID REFERENCES lesson_plans(id);`
-  - `lesson_plans.teach_dates` migration (add `teach_dates date[]`, backfill, drop old `teach_date`).
-  - `ALTER TABLE lesson_plans ADD COLUMN IF NOT EXISTS duration TEXT;` (new — `duration` field, "เวลาเรียน" e.g. "1 ชั่วโมง", commit `9df64af`)
-  - **School logo** (`7521440`): the `School.logo_path` type + `school-assets` bucket code existed but the DB column/bucket never did, so the logo NEVER printed. Needs: `ALTER TABLE schools ADD COLUMN IF NOT EXISTS logo_path TEXT;` + create public `school-assets` storage bucket + RLS policies allowing anon SELECT/INSERT/UPDATE. Then admin uploads logo via `/admin/settings`. Print pages (`lesson-plans/[id]/print`, `lesson-plans`, `tests/[id]/print`) already read `logo_path` and render it.
+- [x] All earlier session migrations confirmed live in production (planned_week, pacing_logs.lesson_plan_id, teach_dates, duration, logo_path + bucket — verified by features working in prod screenshots + user confirmation 2026-07-03).
+- [x] `supabase-multitenant.sql` no longer recreates the dead `one_per_day` index (fixed to the per-plan unique index).
+- [x] `supabase-system12-missing-schema.sql` created — reconstructs the 3 tables that had no CREATE TABLE anywhere (`lesson_plans`, `test_item_responses`, `student_grade_history`) plus all session-added columns/indexes/bucket. Idempotent. Reconstructed from code, not dumped from live DB — verify against live schema when convenient.
 - [x] Exam print/export page now pulls real school name + logo (both the HTML preview and Word export), matching the lesson plan print page. Font was already TH Sarabun in both. Done in commit `0c7cb35`.
 - [x] Lesson plan print page (single + bulk Word export) header now uses a bordered 3-row table matching the school's actual paper template (plan no./topic, subject/grade/term/year, teacher/date/duration). `duration` is editable on the plan detail page. Done in commits `d8cd8bb`, `9df64af`.
 - [ ] Open risk, unconfirmed by user: any exams graded under the OLD tap-correct grading model (before the "tap = wrong" flip) will show inflated scores under the new model. Need to check `test_item_responses` for pre-flip data if this matters historically.
 - [x] Prompt system upgrade (`5aad2fa`, no migration needed): lesson-plan prompt add-ons (`PROMPT_EXTRAS` in generate page), exam prompt answer-distribution fix + question types beyond MC (`EXAM_QTYPES`/`EXAM_STYLES` in `src/lib/exam-import.ts`, parser accepts free-text answers), worksheet prompt kit (`src/components/worksheets/worksheet-prompt-kit.tsx`, button on plan detail page).
-- [ ] **BLOCKING — live saves failing in production right now.** Exit-ticket assessment fixed to one-record-per-(student, lesson plan) model (`fce81b3`) — see gotcha above. Discovered in prod (2026-07-03) that a **pre-existing legacy constraint `student_assessments_one_per_day`** (never documented, predates this session's work) enforces "1 record per student per day," which directly conflicts with the new model and throws `duplicate key value violates unique constraint "student_assessments_one_per_day"` on save. Must run in Supabase SQL Editor:
-  ```sql
-  -- 1) drop the old "one per day" rule — conflicts with the new one-per-lesson-plan model
-  ALTER TABLE student_assessments DROP CONSTRAINT IF EXISTS student_assessments_one_per_day;
-  DROP INDEX IF EXISTS student_assessments_one_per_day;
-
-  -- 2) dedupe existing legacy duplicate rows (from the old daily-reassessment behavior), keep latest
-  DELETE FROM student_assessments
-  WHERE id IN (
-    SELECT id FROM (
-      SELECT id, ROW_NUMBER() OVER (
-        PARTITION BY student_id, module_id, lesson_plan_id
-        ORDER BY created_at DESC, id DESC
-      ) AS rn
-      FROM student_assessments
-    ) t WHERE t.rn > 1
-  );
-
-  -- 3) add the new constraint so upsert(onConflict: 'student_id,module_id,lesson_plan_id') works
-  DROP INDEX IF EXISTS student_assessments_student_module_plan_uniq;
-  CREATE UNIQUE INDEX student_assessments_student_module_plan_uniq
-  ON student_assessments (student_id, module_id, lesson_plan_id) NULLS NOT DISTINCT;
-  ```
-  Until this runs, `persistGrade()`'s `upsert()` in `assessment/page.tsx` fails for any student being re-saved on a different day than their existing record — this is actively breaking teacher saves, not just a future risk. **Before trusting any future schema-check on this table, actually inspect live constraints (e.g. `\d student_assessments` in SQL Editor) rather than assuming only what's in this file** — this constraint's existence was missed because it was never introduced by any change made in this session.
+- [x] ~~BLOCKING~~ RESOLVED (user ran the SQL 2026-07-03, saves confirmed working): dropped legacy `student_assessments_one_per_day` constraint, deduped, added per-plan unique index. Lesson kept: **before trusting any schema assumption, inspect live constraints in SQL Editor** — that legacy constraint predated this session and was invisible from the repo.
 

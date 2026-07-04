@@ -77,10 +77,12 @@ ALTER TABLE student_assessments ADD COLUMN IF NOT EXISTS school_id UUID REFERENC
 UPDATE student_assessments SET school_id = '00000000-0000-4000-a000-000000000001' WHERE school_id IS NULL;
 ALTER TABLE student_assessments ALTER COLUMN school_id SET DEFAULT '00000000-0000-4000-a000-000000000001';
 ALTER TABLE student_assessments ALTER COLUMN school_id SET NOT NULL;
--- อัพเดท unique index: กัน double-entry ต่อโรงเรียน/นักเรียน/บท/วัน
+-- unique index: 1 บันทึกต่อ (นักเรียน, หน่วย, แผนการสอน) แก้ไขซ้ำได้ทุกวัน — โมเดลปัจจุบัน (2026-07-03)
+-- ห้ามใช้ one_per_day แบบเดิม: ขัดกับ upsert ใน src/app/teacher/assessment/page.tsx และเคยทำให้บันทึกใน production พัง
 DROP INDEX IF EXISTS student_assessments_one_per_day;
-CREATE UNIQUE INDEX student_assessments_one_per_day
-  ON student_assessments (school_id, student_id, module_id, ((created_at AT TIME ZONE 'Asia/Bangkok')::date));
+DROP INDEX IF EXISTS student_assessments_student_module_plan_uniq;
+CREATE UNIQUE INDEX student_assessments_student_module_plan_uniq
+  ON student_assessments (student_id, module_id, lesson_plan_id) NULLS NOT DISTINCT;
 
 -- ---- homework_submissions ----
 ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id);
