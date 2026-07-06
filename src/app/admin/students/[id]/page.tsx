@@ -12,6 +12,7 @@ import { StudentRadar } from '@/components/student-radar'
 import {
   buildStudentTagScores, buildBehaviorSubjectScores, buildFocusBreakdown, average, TagScore, FocusBreakdown,
 } from '@/lib/analytics'
+import { latestAssessmentPerPlan } from '@/lib/db'
 import { Loader2, ArrowLeft, Share2, Star } from 'lucide-react'
 
 export default function StudentDetailPage() {
@@ -45,7 +46,7 @@ export default function StudentDetailPage() {
 
       setStudent(s)
       const moduleMap = new Map<string, CurriculumModule>((modules ?? []).map(m => [m.id, m]))
-      const list = (assessments ?? []) as StudentAssessment[]
+      const list = latestAssessmentPerPlan((assessments ?? []) as StudentAssessment[])
 
       setTagScores(buildStudentTagScores(list, moduleMap))
       setBehaviorScores(buildBehaviorSubjectScores(list, moduleMap))

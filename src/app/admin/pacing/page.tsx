@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { getSchoolId } from '@/lib/school'
-import { fetchAllPaged, getTermStartISO } from '@/lib/db'
+import { fetchAllPaged, getTermStartISO, latestAssessmentPerPlan } from '@/lib/db'
 import {
   CurriculumModule, PacingLog, StudentAssessment, PlanSubmission, AcademicSettings,
   Indicator, ModuleIndicator, Test, TestScore,
@@ -73,11 +73,13 @@ export default function CrossTrackingPage() {
       const week = settings ? currentAcademicWeek((settings as AcademicSettings).term_start_date) : 0
       setCurrentWeek(week)
 
+      const dedupedAssessments = latestAssessmentPerPlan((assessments ?? []) as StudentAssessment[])
+
       const planSet = new Set((plans ?? []).map((p: PlanSubmission) => p.module_id))
       const built = buildCrossTracking(
         (modules ?? []) as CurriculumModule[],
         (pacings ?? []) as PacingLog[],
-        (assessments ?? []) as StudentAssessment[],
+        dedupedAssessments,
         planSet,
         week
       )
@@ -105,7 +107,7 @@ export default function CrossTrackingPage() {
       // ---- assessment health: formative (ดาวรายคาบ) vs summative (สอบจริง) per subject ----
       const moduleSubject = new Map(((modules ?? []) as CurriculumModule[]).map(m => [m.id, m.subject]))
       const formBuckets = new Map<string, number[]>()
-      ;((assessments ?? []) as StudentAssessment[]).forEach(a => {
+      dedupedAssessments.forEach(a => {
         const subj = moduleSubject.get(a.module_id)
         if (!subj) return
         if (!formBuckets.has(subj)) formBuckets.set(subj, [])

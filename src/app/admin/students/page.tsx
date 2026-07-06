@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Student, StudentAssessment } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { average } from '@/lib/analytics'
-import { fetchAllPaged } from '@/lib/db'
+import { fetchAllPaged, latestAssessmentPerPlan } from '@/lib/db'
 import { RoomFilter } from '@/components/room-filter'
 import { Loader2, ChevronRight, User } from 'lucide-react'
 
@@ -26,7 +26,7 @@ export default function StudentsPage() {
       ])
 
       const byStudent = new Map<string, StudentAssessment[]>()
-      assessments.forEach(a => {
+      latestAssessmentPerPlan(assessments).forEach(a => {
         if (!byStudent.has(a.student_id)) byStudent.set(a.student_id, [])
         byStudent.get(a.student_id)!.push(a)
       })

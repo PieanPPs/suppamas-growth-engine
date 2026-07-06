@@ -22,7 +22,7 @@ import {
 } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
-import { fetchAllPaged } from '@/lib/db'
+import { fetchAllPaged, latestAssessmentPerPlan } from '@/lib/db'
 
 const TEACHER_KEY = 'sge_teacher_id'
 
@@ -88,7 +88,7 @@ export default function Pp5Page() {
     ])
     setTeachers(ts ?? []); setCourses(crs ?? []); setStudents(stds ?? [])
     setModules((mods ?? []) as CurriculumModule[])
-    setAssessments(asm); setTests(tst ?? []); setTestScores(tsc)
+    setAssessments(latestAssessmentPerPlan(asm)); setTests(tst ?? []); setTestScores(tsc)
     setComponents(comps ?? []); setSavedScores(cs)
     setHomework(hw); setTraitRatings(tr); setAttendanceRows(att)
     const session = getSession()

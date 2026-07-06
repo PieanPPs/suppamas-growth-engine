@@ -11,7 +11,7 @@ import { buildPp5Row, PHASE_LABEL, Pp5Row } from '@/lib/pp5'
 import { TRAIT_ITEMS, LEVEL_LABELS } from '@/lib/traits'
 import { Loader2, Printer, ArrowLeft } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
-import { fetchAllPaged } from '@/lib/db'
+import { fetchAllPaged, latestAssessmentPerPlan } from '@/lib/db'
 
 export default function Pp5PrintPage() {
   const supabase = createClient()
@@ -64,7 +64,7 @@ export default function Pp5PrintPage() {
       setRows(list.map(s => buildPp5Row(
         s.id, compList, manualMap,
         (tst ?? []) as Test[], (tsc ?? []) as TestScore[],
-        (asm ?? []) as StudentAssessment[], moduleSubject
+        latestAssessmentPerPlan((asm ?? []) as StudentAssessment[]), moduleSubject
       )))
       setLoading(false)
     }

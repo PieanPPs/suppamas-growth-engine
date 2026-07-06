@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { Student, StudentAssessment, HomeworkSubmission } from '@/lib/types'
 import { computeHeroScores } from '@/lib/gamification'
-import { fetchAllPaged, getTermStartISO } from '@/lib/db'
+import { fetchAllPaged, getTermStartISO, latestAssessmentPerPlan } from '@/lib/db'
 import { getSchoolId } from '@/lib/school'
 import { RoomFilter, readStoredRoom, storeRoom } from '@/components/room-filter'
 import { Loader2, Trophy, Star, Heart, BookCheck, Smile } from 'lucide-react'
@@ -41,7 +41,7 @@ export default function HeroesPage() {
         }),
       ])
       setStudents((st ?? []) as Student[])
-      setAssessments(asm)
+      setAssessments(latestAssessmentPerPlan(asm))
       setHomework(hw)
       setLoading(false)
     }

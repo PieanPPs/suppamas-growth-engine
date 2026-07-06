@@ -28,6 +28,33 @@ export async function fetchAllPaged<T>(makeQuery: () => RangeableQuery<T>): Prom
 }
 
 /**
+ * Collapse student_assessments rows to ONE row per (student, module, lesson_plan) —
+ * the confirmed data model (2026-07-03): an exit-ticket result is a single editable
+ * record per triple, NOT one record per day. Production now enforces this with a
+ * unique index, so on clean data this is a no-op; it exists to neutralize legacy
+ * duplicate rows created under the old one-per-day model and any database where the
+ * migration hasn't run. Keeps the newest row (by created_at, ties/missing → later
+ * input order wins), so callers don't need to order their fetch a particular way.
+ *
+ * EVERY page that averages or counts this table must pass its rows through here
+ * first — counting raw rows double-counts students that were re-assessed.
+ */
+export function latestAssessmentPerPlan<T extends {
+  student_id: string
+  module_id: string
+  lesson_plan_id?: string | null
+  created_at?: string
+}>(rows: T[]): T[] {
+  const latest = new Map<string, T>()
+  for (const row of rows) {
+    const key = `${row.student_id}::${row.module_id}::${row.lesson_plan_id ?? ''}`
+    const prev = latest.get(key)
+    if (!prev || String(row.created_at ?? '') >= String(prev.created_at ?? '')) latest.set(key, row)
+  }
+  return Array.from(latest.values())
+}
+
+/**
  * ISO timestamp for the start of the current academic term, or null if unset.
  * Analytics/dashboard pages should scope their growth-table reads to this instead of
  * pulling the school's entire all-time history — student_assessments alone grows by

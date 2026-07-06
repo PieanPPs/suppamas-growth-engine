@@ -13,7 +13,7 @@ import { TRAIT_ITEMS, LEVEL_LABELS } from '@/lib/traits'
 import { buildStudentTagScores } from '@/lib/analytics'
 import { Loader2, Printer, ArrowLeft } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
-import { fetchAllPaged } from '@/lib/db'
+import { fetchAllPaged, latestAssessmentPerPlan } from '@/lib/db'
 
 export default function Pp6PrintPage() {
   const supabase = createClient()
@@ -65,7 +65,7 @@ export default function Pp6PrintPage() {
 
       setStudents(allStudents)
       setCourses(crs ?? []); setComponents(comps ?? []); setComponentScores(cs)
-      setTests(tst ?? []); setTestScores(tsc); setAssessments(asm)
+      setTests(tst ?? []); setTestScores(tsc); setAssessments(latestAssessmentPerPlan(asm))
       setModules((mods ?? []) as CurriculumModule[])
       setHomework(hw); setTraits(tr); setAttendance(att)
       setSettings(st as AcademicSettings | null)

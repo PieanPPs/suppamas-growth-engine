@@ -13,7 +13,7 @@ import {
 import { AlertTriangle, BookOpen, Users, TrendingUp, Loader2, TrendingDown } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
-import { fetchAllPaged, getTermStartISO } from '@/lib/db'
+import { fetchAllPaged, getTermStartISO, latestAssessmentPerPlan } from '@/lib/db'
 
 /** Extract grade from course.grade or course.name, e.g. "ภาษาไทย ป.3" → "ป.3" */
 function gradeFromCourse(grade: string | null, name: string): string | null {
@@ -89,10 +89,12 @@ export default function TeacherOverviewPage() {
         ? (students ?? []).filter(s => gradeList.some(g => (s.class_name ?? '').startsWith(g)))
         : (students ?? [])
 
+      const dedupedAssessments = latestAssessmentPerPlan((assessments ?? []) as StudentAssessment[])
+
       setTotalStudents(visibleStudents.length)
       setWarnings(computeAtRiskStudents(
         visibleStudents as Student[],
-        (assessments ?? []) as StudentAssessment[],
+        dedupedAssessments,
         visibleModules as CurriculumModule[],
       ))
 
@@ -103,7 +105,7 @@ export default function TeacherOverviewPage() {
       })
 
       const assessmentsByModule = new Map<string, StudentAssessment[]>()
-      assessments?.forEach(a => {
+      dedupedAssessments.forEach(a => {
         if (!assessmentsByModule.has(a.module_id)) assessmentsByModule.set(a.module_id, [])
         assessmentsByModule.get(a.module_id)!.push(a)
       })

@@ -1,6 +1,6 @@
 import { createClient } from './supabase/client'
 import { getSchoolId } from './school'
-import { fetchAllPaged } from './db'
+import { fetchAllPaged, latestAssessmentPerPlan } from './db'
 import {
   StudentAssessment, HomeworkSubmission, PacingLog, PlanSubmission,
   CurriculumModule, AcademicSettings, Indicator, ModuleIndicator,
@@ -56,7 +56,7 @@ export async function loadImpact(): Promise<ImpactData> {
   ])
 
   const s = (settings as AcademicSettings) ?? { id: 1, term_name: 'ภาคเรียนที่ 1', term_start_date: '2026-05-18', total_weeks: 20 }
-  const aList = (assessments ?? []) as StudentAssessment[]
+  const aList = latestAssessmentPerPlan((assessments ?? []) as StudentAssessment[])
   const hList = (homework ?? []) as HomeworkSubmission[]
   const pList = (pacings ?? []) as PacingLog[]
   const planList = (plans ?? []) as PlanSubmission[]

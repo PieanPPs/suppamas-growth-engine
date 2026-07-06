@@ -20,7 +20,7 @@ import Link from 'next/link'
 import { Loader2, UserCircle2, ChevronDown, CalendarX2, BookPlus } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
-import { fetchAllPaged } from '@/lib/db'
+import { fetchAllPaged, latestAssessmentPerPlan } from '@/lib/db'
 
 const TEACHER_KEY = 'sge_teacher_id'
 
@@ -66,14 +66,7 @@ export default function PacingPage() {
       setHomeworkTasks(new Map((tasks ?? []).map((t: HomeworkTask) => [t.module_id, t])))
       setAllStudents((students ?? []) as Pick<Student, 'id' | 'class_name'>[])
 
-      // dedupe to one row per (student, module, lesson_plan_id) — keep the latest, since a
-      // student's exit-ticket result for a given lesson plan is a single record, not one per day.
-      // legacy rows from before that model (same student re-assessed on different days) collapse here.
-      const latestByStudentModuleLp = new Map<string, StudentAssessment>()
-      ;(assessments ?? []).forEach((a: StudentAssessment) => {
-        latestByStudentModuleLp.set(`${a.student_id}::${a.module_id}::${a.lesson_plan_id ?? ''}`, a)
-      })
-      const dedupedAssessments = Array.from(latestByStudentModuleLp.values())
+      const dedupedAssessments = latestAssessmentPerPlan(assessments ?? [])
 
       // exit-ticket summary per module (distinct students + avg)
       const byModule = new Map<string, StudentAssessment[]>()

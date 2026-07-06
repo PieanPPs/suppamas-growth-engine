@@ -9,6 +9,7 @@ import {
   buildStudentTagScores, buildFocusBreakdown, average, happinessMessage,
   TagScore, FocusBreakdown,
 } from '@/lib/analytics'
+import { latestAssessmentPerPlan } from '@/lib/db'
 import { Loader2, Star, Heart, ClipboardList, CheckCircle2, Clock, XCircle, CircleDashed } from 'lucide-react'
 
 type QuestItem = { title: string; status: HomeworkStatus | null }
@@ -42,7 +43,7 @@ export default function HappinessReportPage() {
 
       setStudent(s)
       const moduleMap = new Map<string, CurriculumModule>((modules ?? []).map(m => [m.id, m]))
-      const list = (assessments ?? []) as StudentAssessment[]
+      const list = latestAssessmentPerPlan((assessments ?? []) as StudentAssessment[])
       const hwList = (hw ?? []) as HomeworkSubmission[]
 
       setTagScores(buildStudentTagScores(list, moduleMap))

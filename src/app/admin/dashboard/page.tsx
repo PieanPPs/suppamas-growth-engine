@@ -6,7 +6,7 @@ import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { CurriculumModule, PacingLog, StudentAssessment, Student } from '@/lib/types'
 import { computeAtRiskStudents, RiskWarning } from '@/lib/predictive'
-import { fetchAllPaged, getTermStartISO } from '@/lib/db'
+import { fetchAllPaged, getTermStartISO, latestAssessmentPerPlan } from '@/lib/db'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
@@ -71,6 +71,8 @@ export default function DashboardPage() {
 
       if (!modules) { setLoading(false); return }
 
+      const dedupedAssessments = latestAssessmentPerPlan((assessments ?? []) as StudentAssessment[])
+
       const visibleModules = modules
       const visibleStudents = students ?? []
 
@@ -78,7 +80,7 @@ export default function DashboardPage() {
       setWarnings(
         computeAtRiskStudents(
           visibleStudents as Student[],
-          (assessments ?? []) as StudentAssessment[],
+          dedupedAssessments,
           visibleModules as CurriculumModule[]
         )
       )
@@ -94,7 +96,7 @@ export default function DashboardPage() {
 
       // Group assessments by module
       const assessmentsByModule = new Map<string, StudentAssessment[]>()
-      assessments?.forEach(a => {
+      dedupedAssessments.forEach(a => {
         if (!assessmentsByModule.has(a.module_id)) {
           assessmentsByModule.set(a.module_id, [])
         }
