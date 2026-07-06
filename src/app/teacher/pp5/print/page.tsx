@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import {
   Student, Course, Test, TestScore, StudentAssessment, CurriculumModule,
-  ScoreComponent, ComponentScore, Classroom, TraitRating,
+  ScoreComponent, ComponentScore, Classroom, TraitRating, AttendanceRecord,
 } from '@/lib/types'
 import { buildPp5Row, PHASE_LABEL, Pp5Row } from '@/lib/pp5'
 import { TRAIT_ITEMS, LEVEL_LABELS } from '@/lib/traits'
@@ -25,6 +25,8 @@ export default function Pp5PrintPage() {
   const [components, setComponents] = useState<ScoreComponent[]>([])
   const [rows, setRows] = useState<Pp5Row[]>([])
   const [traits, setTraits] = useState<TraitRating[]>([])
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
+  const [teachingDays, setTeachingDays] = useState(0)
 
   useEffect(() => {
     async function load() {
@@ -35,7 +37,7 @@ export default function Pp5PrintPage() {
 
       const [
         { data: crs }, { data: stds }, { data: comps }, cs,
-        { data: tst }, tsc, asm, { data: mods }, { data: cls }, tr,
+        { data: tst }, tsc, asm, { data: mods }, { data: cls }, tr, att,
       ] = await Promise.all([
         supabase.from('courses').select('*').eq('school_id', schoolId).eq('subject_key', subj).single(),
         supabase.from('students').select('*').eq('school_id', schoolId).order('student_number'),
@@ -47,9 +49,13 @@ export default function Pp5PrintPage() {
         supabase.from('curriculum_modules').select('id, subject').eq('school_id', schoolId),
         rm ? supabase.from('classrooms').select('*').eq('school_id', schoolId).eq('name', rm).single() : Promise.resolve({ data: null }),
         fetchAllPaged<TraitRating>(() => supabase.from('trait_ratings').select('*').eq('school_id', schoolId).eq('subject', subj).order('id')),
+        fetchAllPaged<AttendanceRecord>(() => supabase.from('attendance').select('*').eq('school_id', schoolId).order('id')),
       ])
 
       setTraits(tr)
+      setAttendance(att)
+      // วันเรียนโดยประมาณ = จำนวนวันที่มีการประเมินใด ๆ ในระบบ (แนวเดียวกับ ปพ.6)
+      setTeachingDays(new Set(((asm ?? []) as StudentAssessment[]).map(a => a.created_at.slice(0, 10))).size)
       setCourse(crs)
       setClassroom(cls as Classroom | null)
       const list = ((stds ?? []) as Student[]).filter(s => !rm || s.class_name === rm)
@@ -186,6 +192,54 @@ export default function Pp5PrintPage() {
             </tr>
           </tbody>
         </table>
+
+        {/* attendance summary — สรุปเวลาเรียนตามแบบ ปพ.5 (เกณฑ์เข้าเรียนไม่น้อยกว่า 80%) */}
+        {teachingDays > 0 && (
+          <>
+            <h3 className="text-[11px] font-bold text-gray-900 mt-4">
+              สรุปเวลาเรียน (วันเรียนที่บันทึกในระบบ {teachingDays} วัน · เกณฑ์เข้าเรียนไม่น้อยกว่า 80%)
+            </h3>
+            <table className="w-full text-[10px] border border-gray-400 mt-1.5">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border border-gray-400 px-1 py-1 w-7">ลำดับ</th>
+                  <th className="border border-gray-400 px-2 py-1 text-left min-w-[120px]">ชื่อ-สกุล</th>
+                  <th className="border border-gray-400 px-1 py-1 w-12">ป่วย</th>
+                  <th className="border border-gray-400 px-1 py-1 w-12">ลา</th>
+                  <th className="border border-gray-400 px-1 py-1 w-12">ขาด</th>
+                  <th className="border border-gray-400 px-1 py-1 w-12">สาย</th>
+                  <th className="border border-gray-400 px-1 py-1 w-16">มาเรียน (วัน)</th>
+                  <th className="border border-gray-400 px-1 py-1 w-16">ร้อยละ</th>
+                  <th className="border border-gray-400 px-1 py-1 w-20">ผลการประเมิน</th>
+                </tr>
+              </thead>
+              <tbody>
+                {students.map((s, i) => {
+                  const mine = attendance.filter(a => a.student_id === s.id)
+                  const cnt = (st: string) => mine.filter(a => a.status === st).length
+                  const missed = Math.min(teachingDays, cnt('absent') + cnt('sick') + cnt('leave'))
+                  const present = teachingDays - missed
+                  const pct = Math.round((present / teachingDays) * 100)
+                  return (
+                    <tr key={s.id}>
+                      <td className="border border-gray-400 px-1 py-0.5 text-center">{i + 1}</td>
+                      <td className="border border-gray-400 px-2 py-0.5">{s.name}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-center">{cnt('sick') || ''}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-center">{cnt('leave') || ''}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-center">{cnt('absent') || ''}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-center">{cnt('late') || ''}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-center">{present}</td>
+                      <td className="border border-gray-400 px-1 py-0.5 text-center font-semibold">{pct}</td>
+                      <td className={`border border-gray-400 px-1 py-0.5 text-center font-bold ${pct < 80 ? 'text-red-600' : ''}`}>
+                        {pct >= 80 ? 'ผ่าน' : 'ไม่ผ่าน (มส.)'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </>
+        )}
 
         {/* ===== หน้า 2: คุณลักษณะอันพึงประสงค์ + อ่านคิดวิเคราะห์เขียน ===== */}
         {traits.length > 0 && (
