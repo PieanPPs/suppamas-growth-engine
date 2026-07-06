@@ -44,12 +44,10 @@ export default function LoginPage() {
     if (!pin || loading) return
     setLoading(true)
     setError('')
+    // PIN check runs inside a SECURITY DEFINER RPC — the pins themselves live in
+    // teacher_pins, which has no RLS policy and can never be read with the anon key
     const { data, error: dbErr } = await supabase
-      .from('teachers')
-      .select('id, name, role')
-      .eq('school_id', schoolId)
-      .eq('pin', pin)
-      .maybeSingle()
+      .rpc('login_with_pin', { p_school_id: schoolId, p_pin: pin })
 
     if (dbErr) {
       setError(`DB error: ${dbErr.message}`)
@@ -57,15 +55,16 @@ export default function LoginPage() {
       return
     }
 
-    if (!data) {
+    const row = (Array.isArray(data) ? data[0] : data) as { id: string; name: string; role: string | null } | undefined
+    if (!row) {
       setError('รหัสไม่ถูกต้อง กรุณาลองใหม่')
       setPin('')
       setLoading(false)
       return
     }
 
-    const role = (data.role ?? 'teacher') as UserRole
-    setSession({ userId: data.id, name: data.name, role })
+    const role = (row.role ?? 'teacher') as UserRole
+    setSession({ userId: row.id, name: row.name, role })
     router.push(ROLE_HOME[role])
   }
 

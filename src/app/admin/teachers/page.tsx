@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Teacher, Classroom, Course } from '@/lib/types'
 import {
   ArrowLeft, Loader2, Plus, Pencil, Trash2, X, Check, UserCog, GraduationCap,
-  BookOpen, AlertTriangle, ChevronDown, ChevronUp, KeyRound, Eye, EyeOff, ShieldCheck,
+  BookOpen, AlertTriangle, ChevronDown, ChevronUp, KeyRound, ShieldCheck,
 } from 'lucide-react'
 import type { UserRole } from '@/lib/types'
 
@@ -37,19 +37,23 @@ export default function TeachersPage() {
   const [draftRole, setDraftRole] = useState<UserRole>('teacher')
   const [editingPin, setEditingPin] = useState<string | null>(null)
   const [draftPin, setDraftPin] = useState('')
-  const [revealPin, setRevealPin] = useState<string | null>(null)
+  const [pinError, setPinError] = useState('')
+  const [pinSetIds, setPinSetIds] = useState<Set<string>>(new Set())
   const [showSubjectMgmt, setShowSubjectMgmt] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
   async function load() {
-    const [{ data: ts }, { data: cs }, { data: crs }, { data: links }, { data: mods }] = await Promise.all([
+    const [{ data: ts }, { data: cs }, { data: crs }, { data: links }, { data: mods }, { data: pinRows }] = await Promise.all([
       supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('classrooms').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('courses').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('teacher_classrooms').select('*'),
       supabase.from('curriculum_modules').select('subject').eq('school_id', schoolId),
+      // pins live in teacher_pins (unreadable with the anon key) — this RPC only says WHO has one
+      supabase.rpc('teacher_ids_with_pin', { p_school_id: schoolId }),
     ])
+    setPinSetIds(new Set(((pinRows ?? []) as { teacher_id: string }[]).map(r => r.teacher_id)))
     const linkMap = new Map<string, string[]>()
     ;(links ?? []).forEach((l: { teacher_id: string; classroom_id: string }) => {
       if (!linkMap.has(l.teacher_id)) linkMap.set(l.teacher_id, [])
@@ -96,7 +100,14 @@ export default function TeachersPage() {
 
   async function savePin(teacherId: string) {
     if (!draftPin.trim()) return
-    await supabase.from('teachers').update({ pin: draftPin.trim() }).eq('id', teacherId)
+    setPinError('')
+    const { error } = await supabase.rpc('set_teacher_pin', { p_teacher_id: teacherId, p_pin: draftPin.trim() })
+    if (error) {
+      if (error.message.includes('PIN_TAKEN')) setPinError('PIN นี้ถูกใช้โดยครูคนอื่นแล้ว — เลือกรหัสอื่น')
+      else if (error.message.includes('PIN_INVALID')) setPinError('PIN ต้องเป็นตัวเลข 4–8 หลัก')
+      else setPinError(`บันทึกไม่สำเร็จ: ${error.message}`)
+      return
+    }
     setEditingPin(null)
     setDraftPin('')
     load()
@@ -240,7 +251,7 @@ export default function TeachersPage() {
       <div className="space-y-2">
         {teachers.map(t => {
           const roleInfo = ROLE_OPTIONS.find(r => r.value === (t.role ?? 'teacher')) ?? ROLE_OPTIONS[0]
-          const hasPin = !!t.pin
+          const hasPin = pinSetIds.has(t.id)
           const isPinEditing = editingPin === t.id
           return (
             <div key={t.id} className="bg-white border border-gray-200 rounded-2xl px-4 py-3 space-y-2">
@@ -272,19 +283,11 @@ export default function TeachersPage() {
               <div className="flex items-center gap-2 border-t border-gray-100 pt-2">
                 <KeyRound size={13} className="text-gray-400 flex-shrink-0" />
                 {hasPin ? (
-                  <span className="text-xs text-gray-500 font-mono flex-1">
-                    {revealPin === t.id ? t.pin : '●'.repeat(t.pin!.length)}
-                  </span>
+                  <span className="text-xs text-green-600 flex-1">ตั้ง PIN แล้ว (ดูย้อนหลังไม่ได้ — ลืมให้รีเซ็ต)</span>
                 ) : (
                   <span className="text-xs text-amber-600 flex-1">ยังไม่มี PIN</span>
                 )}
-                {hasPin && (
-                  <button onClick={() => setRevealPin(revealPin === t.id ? null : t.id)}
-                    className="text-gray-400 hover:text-gray-600 p-0.5">
-                    {revealPin === t.id ? <EyeOff size={13} /> : <Eye size={13} />}
-                  </button>
-                )}
-                <button onClick={() => { setEditingPin(isPinEditing ? null : t.id); setDraftPin('') }}
+                <button onClick={() => { setEditingPin(isPinEditing ? null : t.id); setDraftPin(''); setPinError('') }}
                   className="text-xs text-teal-600 hover:text-teal-700 font-semibold flex items-center gap-0.5 flex-shrink-0">
                   {isPinEditing ? <X size={12} /> : <KeyRound size={12} />}
                   {isPinEditing ? 'ยกเลิก' : hasPin ? 'รีเซต' : 'ตั้ง PIN'}
@@ -292,6 +295,9 @@ export default function TeachersPage() {
               </div>
 
               {/* Inline PIN editor */}
+              {isPinEditing && pinError && (
+                <p className="text-xs text-red-500">{pinError}</p>
+              )}
               {isPinEditing && (
                 <div className="flex gap-2">
                   <input

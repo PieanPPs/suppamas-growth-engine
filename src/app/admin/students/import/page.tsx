@@ -31,9 +31,15 @@ export default function ImportStudentsPage() {
       const buf = await file.arrayBuffer()
       const parsed = await parseStudentWorkbook(buf)
       setRooms(parsed)
-      // load existing national_ids to compute add vs update
-      const { data } = await supabase.from('students').select('national_id').eq('school_id', schoolId)
-      setExistingIds(new Set((data ?? []).map(s => s.national_id).filter(Boolean) as string[]))
+      // national_id now lives in student_private (unreadable with the anon key) —
+      // ask the RPC which of THIS FILE's ids already exist, to compute add vs update
+      const fileIds = parsed.flatMap(r => r.students.map(s => s.national_id)).filter(Boolean) as string[]
+      if (fileIds.length) {
+        const { data } = await supabase.rpc('match_national_ids', { p_school_id: schoolId, p_ids: fileIds })
+        setExistingIds(new Set(((data ?? []) as { national_id: string }[]).map(r => r.national_id)))
+      } else {
+        setExistingIds(new Set())
+      }
     } catch {
       setError('อ่านไฟล์ไม่สำเร็จ — ตรวจสอบว่าเป็นไฟล์ .xlsx รูปแบบรายชื่อนักเรียน')
     }
@@ -47,24 +53,26 @@ export default function ImportStudentsPage() {
 
   async function save() {
     setSaving(true)
+    setError('')
     // 1. upsert classrooms (unique per school+name)
     await supabase.from('classrooms').upsert(
       rooms.map(r => ({ school_id: schoolId, name: r.room, grade: r.grade, homeroom_teacher: r.teacher })),
       { onConflict: 'school_id,name' }
     )
-    // 2. upsert students matched by national_id, insert the id-less ones
+    // 2. import via RPC: matching by national_id happens inside the DB, so the ids
+    // never need to be readable (or written to the public students table) at all
     const rows = allStudents.map(s => ({
-      school_id: schoolId,
       national_id: s.national_id, student_number: s.student_number, name: s.name,
       class_name: s.room, birth_date: s.birth_date, status: s.status, gender: s.gender,
     }))
-    const withId = rows.filter(r => r.national_id)
-    const withoutId = rows.filter(r => !r.national_id)
-    if (withId.length) await supabase.from('students').upsert(withId, { onConflict: 'national_id' })
-    if (withoutId.length) await supabase.from('students').insert(withoutId)
-
+    const { data, error: rpcErr } = await supabase.rpc('import_students', { p_school_id: schoolId, p_rows: rows })
     setSaving(false)
-    setDone({ added: totalNew, updated: totalUpdate })
+    if (rpcErr) {
+      setError(`นำเข้าไม่สำเร็จ: ${rpcErr.message}`)
+      return
+    }
+    const result = data as { added?: number; updated?: number } | null
+    setDone({ added: result?.added ?? totalNew, updated: result?.updated ?? totalUpdate })
   }
 
   return (

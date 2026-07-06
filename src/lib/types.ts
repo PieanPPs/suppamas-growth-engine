@@ -189,11 +189,12 @@ export interface PacingLog {
   curriculum_modules?: CurriculumModule
 }
 
+// national_id ถูกย้ายไปตาราง student_private (system13) — อ่านตรงด้วย anon key ไม่ได้
+// ใช้ผ่าน RPC match_national_ids / import_students เท่านั้น
 export interface Student {
   id: string
   name: string
   class_name: string
-  national_id?: string | null
   student_number?: string | null
   birth_date?: string | null
   status?: string | null
@@ -209,12 +210,13 @@ export interface Classroom {
 
 export type UserRole = 'admin' | 'principal' | 'teacher'
 
+// pin ถูกย้ายไปตาราง teacher_pins (system13) — อ่านตรงด้วย anon key ไม่ได้
+// login ผ่าน RPC login_with_pin, ตั้งรหัสผ่าน RPC set_teacher_pin
 export interface Teacher {
   id: string
   name: string
   subjects: string[]
   role?: UserRole | null
-  pin?: string | null
 }
 
 export type LessonPlanStatus = 'draft' | 'submitted' | 'approved' | 'revision'
