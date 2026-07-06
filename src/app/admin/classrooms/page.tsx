@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Classroom, Student } from '@/lib/types'
 import {
   ArrowLeft, Loader2, Users, ChevronDown, Plus, Pencil, Trash2, X, Check,
-  GraduationCap, UserPlus,
+  GraduationCap, UserPlus, QrCode,
 } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
 
@@ -133,6 +133,12 @@ export default function ClassroomsPage() {
                 {open && (
                   <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
                     <div className="px-3 pb-3 space-y-1.5">
+                      {list.length > 0 && (
+                        <Link href={`/admin/classrooms/qr-print?room=${encodeURIComponent(c.name)}`}
+                          className="w-full border border-purple-200 bg-purple-50 text-purple-700 rounded-xl py-2 text-xs font-semibold flex items-center justify-center gap-1 hover:bg-purple-100">
+                          <QrCode size={14} /> พิมพ์ใบ QR ผู้ปกครองทั้งห้อง ({list.length} คน)
+                        </Link>
+                      )}
                       {list.map((s, i) => (
                         <div key={s.id} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
                           <span className="w-5 text-center text-xs text-gray-400">{i + 1}</span>
