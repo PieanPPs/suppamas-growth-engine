@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { CurriculumModule, PacingLog, StudentAssessment, Student } from '@/lib/types'
@@ -223,6 +224,10 @@ export default function TeacherOverviewPage() {
                 </div>
               </div>
             ))}
+            <Link href="/teacher/remediation"
+              className="block text-center text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200 rounded-xl py-2.5 hover:bg-rose-100">
+              💗 สร้างแผนซ่อมเสริมรายคน + ติดตามผล →
+            </Link>
           </CardContent>
         </Card>
       )}
