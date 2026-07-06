@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -592,6 +593,12 @@ export default function TestsPage() {
       </div>
 
       <ScoreModeSwitch />
+
+      <Link href="/teacher/nt-cycle"
+        className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3 hover:bg-emerald-100">
+        <span className="text-sm font-semibold text-emerald-800">🔁 วงจรติว NT / O-NET</span>
+        <span className="text-xs text-emerald-600">วิเคราะห์จุดอ่อน · ชุดฝึกเฉพาะจุด · กราฟข้ามรอบ →</span>
+      </Link>
 
       {/* Teacher picker — hidden for teacher role */}
       {!isTeacherRole && (
