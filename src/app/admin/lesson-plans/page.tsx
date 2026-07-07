@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { LessonPlan, LessonPlanStatus, Teacher, CurriculumModule } from '@/lib/types'
+import { LessonPlan, LessonPlanStatus, Teacher, CurriculumModule, Course, AcademicSettings } from '@/lib/types'
+import { currentAcademicWeek } from '@/lib/pacing'
 import { getSchoolId } from '@/lib/school'
 import {
   Loader2, CheckCircle2, AlertCircle, Clock, Pencil, BookOpen,
@@ -26,6 +27,13 @@ export default function AdminLessonPlansPage() {
   const supabase = createClient()
   const schoolId = getSchoolId()
   const [plans, setPlans] = useState<PlanWithMeta[]>([])
+  const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [courses, setCourses] = useState<Course[]>([])
+  const [modWeeks, setModWeeks] = useState<Map<string, number | null>>(new Map())
+  const [totalWeeks, setTotalWeeks] = useState(20)
+  const [currentWeek, setCurrentWeek] = useState(1)
+  // มุมมองรายสัปดาห์ — พอครู/วิชาเยอะขึ้น รายการรวมทุกสัปดาห์จะอ่านไม่ไหว
+  const [selectedWeek, setSelectedWeek] = useState<number | 'all'>('all')
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>('submitted')
 
@@ -36,12 +44,14 @@ export default function AdminLessonPlansPage() {
 
   useEffect(() => {
     async function load() {
-      const [{ data: ps }, { data: ts }, { data: mods }] = await Promise.all([
+      const [{ data: ps }, { data: ts }, { data: mods }, { data: crs }, { data: settings }] = await Promise.all([
         supabase.from('lesson_plans').select('*').eq('school_id', schoolId).order('submitted_at', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }),
-        supabase.from('teachers').select('id, name').eq('school_id', schoolId),
-        supabase.from('curriculum_modules').select('id, title, module_code').eq('school_id', schoolId),
+        supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
+        supabase.from('curriculum_modules').select('id, title, module_code, planned_week').eq('school_id', schoolId),
+        supabase.from('courses').select('*').eq('school_id', schoolId),
+        supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
       ])
-      const teacherMap = new Map<string, string>((ts ?? []).map((t: Pick<Teacher, 'id' | 'name'>) => [t.id, t.name]))
+      const teacherMap = new Map<string, string>((ts ?? []).map((t: Teacher) => [t.id, t.name]))
       const modMap = new Map<string, string>((mods ?? []).map((m: Pick<CurriculumModule, 'id' | 'title' | 'module_code'>) => [m.id, `${m.module_code} ${m.title}`]))
       const enriched: PlanWithMeta[] = (ps ?? []).map((p: LessonPlan) => ({
         ...p,
@@ -49,6 +59,16 @@ export default function AdminLessonPlansPage() {
         module_title: p.module_id ? (modMap.get(p.module_id) ?? '') : '',
       }))
       setPlans(enriched)
+      setTeachers((ts ?? []) as Teacher[])
+      setCourses((crs ?? []) as Course[])
+      setModWeeks(new Map((mods ?? []).map((m: { id: string; planned_week: number | null }) => [m.id, m.planned_week])))
+      const s = settings as AcademicSettings | null
+      if (s) {
+        setTotalWeeks(s.total_weeks)
+        const wk = Math.min(s.total_weeks, Math.max(1, currentAcademicWeek(s.term_start_date) || 1))
+        setCurrentWeek(wk)
+        setSelectedWeek(wk) // เปิดมาเห็นสัปดาห์ปัจจุบันก่อน — กดดู "ทุกสัปดาห์" ได้
+      }
       setLoading(false)
     }
     load()
@@ -93,30 +113,43 @@ export default function AdminLessonPlansPage() {
     setNote('')
   }
 
+  // สัปดาห์ที่แผนสังกัด: ใช้ planned_week ของแผน — แผนเก่าที่ไม่ระบุใช้สัปดาห์แรกของหน่วยแทน
+  const effWeek = (p: PlanWithMeta): number | null =>
+    p.planned_week ?? (p.module_id ? modWeeks.get(p.module_id) ?? null : null)
+
+  const weekPlans = selectedWeek === 'all' ? plans : plans.filter(p => effWeek(p) === selectedWeek)
+  const noWeekCount = selectedWeek === 'all' ? 0 : plans.filter(p => effWeek(p) === null).length
+
   const counts: Record<Tab, number> = {
-    all: plans.length,
-    draft: plans.filter(p => (p.status ?? 'draft') === 'draft').length,
-    submitted: plans.filter(p => (p.status ?? 'draft') === 'submitted').length,
-    approved: plans.filter(p => (p.status ?? 'draft') === 'approved').length,
-    revision: plans.filter(p => (p.status ?? 'draft') === 'revision').length,
+    all: weekPlans.length,
+    draft: weekPlans.filter(p => (p.status ?? 'draft') === 'draft').length,
+    submitted: weekPlans.filter(p => (p.status ?? 'draft') === 'submitted').length,
+    approved: weekPlans.filter(p => (p.status ?? 'draft') === 'approved').length,
+    revision: weekPlans.filter(p => (p.status ?? 'draft') === 'revision').length,
   }
 
-  const filtered = activeTab === 'all' ? plans
-    : plans.filter(p => (p.status ?? 'draft') === activeTab)
+  const filtered = activeTab === 'all' ? weekPlans
+    : weekPlans.filter(p => (p.status ?? 'draft') === activeTab)
 
-  // Who hasn't submitted — teachers with only draft/no plans
-  const teacherStatuses = new Map<string, Set<LessonPlanStatus>>()
-  plans.forEach(p => {
-    if (!p.teacher_id) return
-    if (!teacherStatuses.has(p.teacher_id)) teacherStatuses.set(p.teacher_id, new Set())
-    teacherStatuses.get(p.teacher_id)!.add(p.status ?? 'draft')
-  })
-  const notSubmitted = Array.from(teacherStatuses.entries())
-    .filter(([, statuses]) => !statuses.has('submitted') && !statuses.has('approved'))
-    .map(([id]) => {
-      const plan = plans.find(p => p.teacher_id === id)
-      return plan?.teacher_name ?? id
-    })
+  const courseName = (key: string) => courses.find(c => c.subject_key === key)?.name ?? key.replace('_', ' ')
+
+  // ครูที่ยังไม่ส่งแผน (ในสัปดาห์ที่เลือก): นับจากครูทุกคนที่มีบทบาทครูสอน
+  // ไม่ใช่แค่ครูที่เคยมีแผน — คนที่ยังไม่เคยสร้างแผนเลยคือคนที่ต้องเห็นชัดที่สุด
+  const notSubmitted = useMemo(() => {
+    const submittedTeacherIds = new Set(
+      weekPlans
+        .filter(p => (p.status ?? 'draft') === 'submitted' || (p.status ?? 'draft') === 'approved')
+        .map(p => p.teacher_id)
+        .filter(Boolean)
+    )
+    return teachers
+      .filter(t => (t.role ?? 'teacher') === 'teacher' && !submittedTeacherIds.has(t.id))
+      .map(t => ({
+        id: t.id,
+        name: t.name,
+        subjects: (t.subjects ?? []).map(courseName).join(' · '),
+      }))
+  }, [teachers, weekPlans, courses])
 
   if (loading) return (
     <div className="flex items-center justify-center py-24">
@@ -133,6 +166,31 @@ export default function AdminLessonPlansPage() {
         <p className="text-sm text-gray-500 mt-1">อนุมัติ / ขอแก้ไขแผนของครู</p>
       </div>
 
+      {/* Week selector — ดูรายสัปดาห์ (ค่าเริ่มต้น = สัปดาห์ปัจจุบัน) หรือรวมทุกสัปดาห์ */}
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+        <button onClick={() => setSelectedWeek('all')}
+          className={`flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl border transition-colors ${
+            selectedWeek === 'all' ? 'bg-gray-800 border-gray-800 text-white' : 'bg-white border-gray-200 text-gray-500'
+          }`}>
+          ทุกสัปดาห์
+        </button>
+        {Array.from({ length: totalWeeks }, (_, i) => i + 1).map(wk => (
+          <button key={wk} onClick={() => setSelectedWeek(wk)}
+            className={`flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl border transition-colors ${
+              selectedWeek === wk ? 'bg-violet-600 border-violet-600 text-white'
+                : wk === currentWeek ? 'bg-violet-50 border-violet-300 text-violet-700'
+                : 'bg-white border-gray-200 text-gray-500'
+            }`}>
+            {wk === currentWeek ? `สัปดาห์นี้ (${wk})` : `สป. ${wk}`}
+          </button>
+        ))}
+      </div>
+      {selectedWeek !== 'all' && noWeekCount > 0 && (
+        <p className="text-[11px] text-gray-400 -mt-3">
+          มีอีก {noWeekCount} แผนที่ไม่ระบุสัปดาห์ — ดูได้ในมุมมอง &quot;ทุกสัปดาห์&quot;
+        </p>
+      )}
+
       {/* Stats row */}
       <div className="grid grid-cols-4 gap-2">
         {(['submitted', 'approved', 'revision', 'draft'] as LessonPlanStatus[]).map(s => {
@@ -147,15 +205,19 @@ export default function AdminLessonPlansPage() {
         })}
       </div>
 
-      {/* Who hasn't submitted */}
+      {/* Who hasn't submitted (สัปดาห์ที่เลือก) — บอกวิชา/ชั้นที่รับผิดชอบด้วย */}
       {notSubmitted.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
-          <p className="text-xs font-bold text-amber-700 mb-2">ยังไม่ได้ส่งแผน ({notSubmitted.length} คน)</p>
-          <div className="flex flex-wrap gap-1.5">
-            {notSubmitted.map(name => (
-              <span key={name} className="flex items-center gap-1 text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full font-medium">
-                <User size={10} /> {name}
-              </span>
+          <p className="text-xs font-bold text-amber-700 mb-2">
+            ยังไม่ได้ส่งแผน{selectedWeek !== 'all' ? `สัปดาห์ที่ ${selectedWeek}` : ''} ({notSubmitted.length} คน)
+          </p>
+          <div className="space-y-1">
+            {notSubmitted.map(t => (
+              <div key={t.id} className="flex items-center gap-1.5 text-xs bg-amber-100 text-amber-800 px-2.5 py-1.5 rounded-xl">
+                <User size={11} className="flex-shrink-0" />
+                <span className="font-semibold">{t.name}</span>
+                {t.subjects && <span className="text-amber-600 truncate">— {t.subjects}</span>}
+              </div>
             ))}
           </div>
         </div>
@@ -197,7 +259,12 @@ export default function AdminLessonPlansPage() {
                         </span>
                         {plan.subject && (
                           <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-medium">
-                            {plan.subject}
+                            {plan.subject}{plan.grade ? ` ${plan.grade}` : ''}
+                          </span>
+                        )}
+                        {effWeek(plan) != null && (
+                          <span className="text-[10px] bg-violet-50 text-violet-600 px-1.5 py-0.5 rounded font-medium">
+                            สป. {effWeek(plan)}
                           </span>
                         )}
                       </div>

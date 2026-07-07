@@ -102,6 +102,11 @@ export default function LessonPlanDetailPage() {
   // Submit / status
   const [submitting, setSubmitting] = useState(false)
 
+  // Reviewer (ผอ./แอดมิน) actions — approve or send back with a reason
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewNote, setReviewNote] = useState('')
+  const [reviewSaving, setReviewSaving] = useState(false)
+
   // Worksheet prompt kit modal
   const [worksheetOpen, setWorksheetOpen] = useState(false)
 
@@ -236,6 +241,33 @@ export default function LessonPlanDetailPage() {
     setPlan(p => p ? { ...p, status: 'submitted', submitted_at: now, reviewer_note: null } : p)
   }
 
+  async function approvePlan() {
+    if (!plan) return
+    setReviewSaving(true)
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('lesson_plans')
+      .update({ status: 'approved', reviewed_at: now, reviewer_note: null })
+      .eq('id', plan.id)
+    setReviewSaving(false)
+    if (error) { alert(`อนุมัติไม่สำเร็จ: ${error.message}`); return }
+    setPlan(p => p ? { ...p, status: 'approved', reviewed_at: now, reviewer_note: null } : p)
+    setReviewOpen(false)
+  }
+
+  async function sendBackForRevision() {
+    if (!plan || !reviewNote.trim()) return
+    setReviewSaving(true)
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('lesson_plans')
+      .update({ status: 'revision', reviewed_at: now, reviewer_note: reviewNote.trim() })
+      .eq('id', plan.id)
+    setReviewSaving(false)
+    if (error) { alert(`ตีกลับไม่สำเร็จ: ${error.message}`); return }
+    setPlan(p => p ? { ...p, status: 'revision', reviewed_at: now, reviewer_note: reviewNote.trim() } : p)
+    setReviewOpen(false)
+    setReviewNote('')
+  }
+
   async function recallPlan() {
     if (!plan) return
     setSubmitting(true)
@@ -258,6 +290,7 @@ export default function LessonPlanDetailPage() {
 
   const session = getSession()
   const isTeacher = session?.role === 'teacher'
+  const isReviewer = session?.role === 'admin' || session?.role === 'principal'
   const status = plan.status ?? 'draft'
   const statusCfg = STATUS_CONFIG[status]
   const canEdit = isTeacher && (status === 'draft' || status === 'revision')
@@ -277,10 +310,19 @@ export default function LessonPlanDetailPage() {
               <Pencil size={13} /> แก้ไขแผน
             </button>
           )}
-          <button onClick={() => setWorksheetOpen(true)}
-            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-2 rounded-lg">
-            <FileText size={13} /> สร้างใบงาน
-          </button>
+          {/* สร้างใบงาน เป็นเครื่องมือครู — โหมดตรวจของ ผอ./แอดมิน เห็นปุ่มอนุมัติแทน */}
+          {!isReviewer && (
+            <button onClick={() => setWorksheetOpen(true)}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-2 rounded-lg">
+              <FileText size={13} /> สร้างใบงาน
+            </button>
+          )}
+          {isReviewer && status === 'submitted' && (
+            <button onClick={approvePlan} disabled={reviewSaving}
+              className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-50">
+              {reviewSaving ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} อนุมัติแผน
+            </button>
+          )}
           <Link href={`/teacher/lesson-plans/${id}/print`}
             className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold px-3 py-2 rounded-lg">
             <Printer size={13} /> พิมพ์แผน
@@ -314,14 +356,47 @@ export default function LessonPlanDetailPage() {
             ส่งแผนให้ ผอ.
           </button>
         )}
-        {status === 'submitted' && (
+        {/* เรียกคืน = ครูดึงแผนกลับไปแก้เอง / ตีกลับ = ผอ.ส่งกลับพร้อมเหตุผล */}
+        {status === 'submitted' && isTeacher && (
           <button onClick={recallPlan} disabled={submitting}
             className="flex items-center gap-1.5 bg-white border border-blue-200 text-blue-600 text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-50 flex-shrink-0">
             {submitting ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
             เรียกคืน
           </button>
         )}
+        {status === 'submitted' && isReviewer && (
+          <button onClick={() => setReviewOpen(v => !v)}
+            className="flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold px-3 py-2 rounded-lg flex-shrink-0">
+            <AlertCircle size={12} /> ตีกลับเพื่อแก้ไข
+          </button>
+        )}
       </div>
+
+      {/* Reviewer: reason panel for sending the plan back */}
+      {isReviewer && reviewOpen && status === 'submitted' && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 space-y-2">
+          <p className="text-xs font-bold text-red-600">เหตุผล / สิ่งที่ต้องแก้ไข (ครูจะเห็นข้อความนี้ทันที)</p>
+          <textarea
+            value={reviewNote}
+            onChange={e => setReviewNote(e.target.value)}
+            rows={3}
+            autoFocus
+            placeholder="เช่น กิจกรรมช่วงนำเข้าสู่บทเรียนยังไม่สอดคล้องกับจุดประสงค์ข้อ 2.1 ..."
+            className="w-full text-sm border border-red-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
+          />
+          <div className="flex gap-2">
+            <button onClick={sendBackForRevision} disabled={reviewSaving || !reviewNote.trim()}
+              className="flex-1 bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50">
+              {reviewSaving ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+              ยืนยันตีกลับให้ครูแก้ไข
+            </button>
+            <button onClick={() => { setReviewOpen(false); setReviewNote('') }}
+              className="px-4 text-xs text-gray-500 border border-gray-200 rounded-xl hover:bg-gray-50">
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Reviewer note — แสดงทุกสถานะเมื่อมี note */}
       {plan.reviewer_note && (
