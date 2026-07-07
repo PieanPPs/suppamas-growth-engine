@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -10,10 +10,11 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StudentRadar } from '@/components/student-radar'
 import {
-  buildStudentTagScores, buildBehaviorSubjectScores, buildFocusBreakdown, average, TagScore, FocusBreakdown,
+  buildStudentTagScores, buildBehaviorSubjectScores, buildFocusBreakdown, average,
+  splitStrengthsWeaknesses, TagScore, FocusBreakdown,
 } from '@/lib/analytics'
 import { latestAssessmentPerPlan } from '@/lib/db'
-import { Loader2, ArrowLeft, Share2, Star } from 'lucide-react'
+import { Loader2, ArrowLeft, Share2, Star, TrendingUp, TrendingDown } from 'lucide-react'
 
 export default function StudentDetailPage() {
   const params = useParams()
@@ -28,6 +29,12 @@ export default function StudentDetailPage() {
   const [avgAcademic, setAvgAcademic] = useState(0)
   const [avgSoft, setAvgSoft] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [assessmentCount, setAssessmentCount] = useState(0)
+
+  const { strengths, weaknesses } = useMemo(
+    () => splitStrengthsWeaknesses(tagScores),
+    [tagScores]
+  )
 
   useEffect(() => {
     async function load() {
@@ -50,6 +57,7 @@ export default function StudentDetailPage() {
 
       setTagScores(buildStudentTagScores(list, moduleMap))
       setBehaviorScores(buildBehaviorSubjectScores(list, moduleMap))
+      setAssessmentCount(list.length)
 
       // summative: % per indicator from real tests, scaled to the same 0-2 axis
       const testById = new Map(((tests ?? []) as Test[]).map(t => [t.id, t]))
@@ -137,11 +145,46 @@ export default function StudentDetailPage() {
         </Card>
       </div>
 
+      {/* Strengths / weaknesses — explicit sorted list, easier to read than the radar
+          once many standards have accumulated over months of assessment */}
+      {tagScores.length > 0 && (
+        <Card className="border border-gray-200 shadow-sm">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold text-gray-800">
+              เก่งด้านไหน อ่อนด้านไหน
+            </CardTitle>
+            <p className="text-xs text-gray-400">จากการประเมิน {assessmentCount} ครั้งสะสม · เรียงตามคะแนนเฉลี่ยแต่ละมาตรฐาน</p>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <p className="text-xs font-bold text-green-700 flex items-center gap-1"><TrendingUp size={13} /> จุดแข็ง</p>
+              {strengths.length === 0 && <p className="text-xs text-gray-300">—</p>}
+              {strengths.map(t => (
+                <div key={t.tag} className="bg-green-50 border border-green-100 rounded-xl px-2.5 py-1.5">
+                  <p className="text-xs font-semibold text-green-800 leading-snug">{t.tag}</p>
+                  <p className="text-[10px] text-green-600">{t.avgScore.toFixed(1)}/2 · {t.count} ครั้ง</p>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-xs font-bold text-red-600 flex items-center gap-1"><TrendingDown size={13} /> ควรเสริม</p>
+              {weaknesses.length === 0 && <p className="text-xs text-gray-300">—</p>}
+              {weaknesses.map(t => (
+                <div key={t.tag} className="bg-red-50 border border-red-100 rounded-xl px-2.5 py-1.5">
+                  <p className="text-xs font-semibold text-red-800 leading-snug">{t.tag}</p>
+                  <p className="text-[10px] text-red-500">{t.avgScore.toFixed(1)}/2 · {t.count} ครั้ง</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Personalized radar */}
       <Card className="border border-gray-200 shadow-sm">
         <CardHeader className="pb-2 pt-4 px-4">
           <CardTitle className="text-sm font-semibold text-gray-800">
-            จุดแข็ง–จุดอ่อนตามมาตรฐานการเรียนรู้
+            จุดแข็ง–จุดอ่อนตามมาตรฐานการเรียนรู้ (ภาพรวม)
             {testTagScores.length > 0 && <span className="text-xs font-normal text-gray-400"> · รายคาบ vs สอบจริง</span>}
           </CardTitle>
         </CardHeader>

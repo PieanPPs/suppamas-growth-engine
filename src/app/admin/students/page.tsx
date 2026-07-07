@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { average } from '@/lib/analytics'
 import { fetchAllPaged, latestAssessmentPerPlan } from '@/lib/db'
 import { RoomFilter } from '@/components/room-filter'
-import { Loader2, ChevronRight, User } from 'lucide-react'
+import { Loader2, ChevronRight, User, Users2 } from 'lucide-react'
 
 type StudentRow = Student & { avgScore: number; count: number }
 
@@ -56,9 +56,15 @@ export default function StudentsPage() {
 
   return (
     <div className="space-y-4 pb-4">
-      <div>
-        <h2 className="text-xl font-bold text-gray-900">รายงานรายบุคคล</h2>
-        <p className="text-sm text-gray-500 mt-1">เลือกนักเรียนเพื่อดูกราฟจุดแข็ง–จุดอ่อน</p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">รายงานรายบุคคล</h2>
+          <p className="text-sm text-gray-500 mt-1">เลือกนักเรียนเพื่อดูจุดแข็ง–จุดอ่อน</p>
+        </div>
+        <Link href="/admin/students/groups"
+          className="flex-shrink-0 flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-xl">
+          <Users2 size={14} /> จัดกลุ่มตามความสามารถ
+        </Link>
       </div>
 
       {/* เลือกห้อง */}
