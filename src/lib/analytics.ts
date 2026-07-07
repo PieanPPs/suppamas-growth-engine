@@ -1,4 +1,4 @@
-import { CurriculumModule, StudentAssessment, FocusColor, Student } from './types'
+import { CurriculumModule, StudentAssessment, FocusColor, Student, Test, TestItem, TestScore, TestItemResponse } from './types'
 
 export type TagScore = { tag: string; avgScore: number; count: number }
 
@@ -148,6 +148,108 @@ export function weakStudentsByTag(
       .sort((a, b) => a.avgScore - b.avgScore)
       .slice(0, maxPerTag)
     if (weakest.length > 0) result.push({ tag, weakest })
+  })
+  return result.sort((a, b) => a.tag.localeCompare(b.tag))
+}
+
+/**
+ * Per-indicator correctness buckets (0/1 per graded item) for one student, built from real
+ * exam data — test_items.indicator_code + test_item_responses — instead of the informal daily
+ * exit-ticket tags. Follows the same "tap = wrong" convention used throughout the tests/NT-cycle
+ * pages: a test the student was graded on but has no response row for an item counts as correct.
+ */
+function studentIndicatorBuckets(
+  studentId: string,
+  tests: Test[],
+  testItems: TestItem[],
+  testScores: TestScore[],
+  testItemResponses: TestItemResponse[],
+): Map<string, number[]> {
+  const buckets = new Map<string, number[]>()
+  for (const test of tests) {
+    const graded = testScores.some(sc => sc.test_id === test.id && sc.student_id === studentId)
+      || testItemResponses.some(r => r.test_id === test.id && r.student_id === studentId)
+    if (!graded) continue
+    for (const item of testItems) {
+      if (item.test_id !== test.id || !item.indicator_code) continue
+      const wrong = testItemResponses.some(r => r.test_item_id === item.id && r.student_id === studentId && !r.correct)
+      if (!buckets.has(item.indicator_code)) buckets.set(item.indicator_code, [])
+      buckets.get(item.indicator_code)!.push(wrong ? 0 : 1)
+    }
+  }
+  return buckets
+}
+
+/** Per-indicator average score (0-2 scale, same as academic_score) for one student, from real
+ *  exam results rather than daily exit tickets. `tag` holds the indicator code (e.g. "ค 1.1") —
+ *  reuses TagScore so it drops straight into StudentRadar / splitStrengthsWeaknesses. */
+export function buildStudentIndicatorScores(
+  studentId: string,
+  tests: Test[],
+  testItems: TestItem[],
+  testScores: TestScore[],
+  testItemResponses: TestItemResponse[],
+): TagScore[] {
+  const buckets = studentIndicatorBuckets(studentId, tests, testItems, testScores, testItemResponses)
+  return Array.from(buckets.entries())
+    .map(([tag, vals]) => ({
+      tag,
+      avgScore: (vals.reduce((a, b) => a + b, 0) / vals.length) * 2,
+      count: vals.length,
+    }))
+    .sort((a, b) => a.tag.localeCompare(b.tag))
+}
+
+/** Room-wide ability tiers based on real exam performance per indicator (see
+ *  studentIndicatorBuckets) rather than daily exit-ticket academic_tags. */
+export function groupStudentsByIndicatorAbility(
+  students: Student[],
+  tests: Test[],
+  testItems: TestItem[],
+  testScores: TestScore[],
+  testItemResponses: TestItemResponse[],
+): StudentAbility[] {
+  return students
+    .map(s => {
+      const buckets = studentIndicatorBuckets(s.id, tests, testItems, testScores, testItemResponses)
+      const allVals = Array.from(buckets.values()).flat()
+      if (allVals.length === 0) return null
+      const avgScore = (allVals.reduce((a, b) => a + b, 0) / allVals.length) * 2
+      return { student: s, avgScore, count: allVals.length, tier: tierOf(avgScore) }
+    })
+    .filter((x): x is StudentAbility => x !== null)
+    .sort((a, b) => b.avgScore - a.avgScore)
+}
+
+/** For each indicator tested across the given tests, which students haven't yet passed it
+ *  (avg &lt; 1.5) based on real exam item results — weakest first, capped per indicator. */
+export function weakStudentsByIndicator(
+  students: Student[],
+  tests: Test[],
+  testItems: TestItem[],
+  testScores: TestScore[],
+  testItemResponses: TestItemResponse[],
+  maxPerIndicator = 5,
+): TagWeakness[] {
+  const perStudent = new Map<string, Map<string, number[]>>()
+  students.forEach(s => perStudent.set(s.id, studentIndicatorBuckets(s.id, tests, testItems, testScores, testItemResponses)))
+
+  const codes = new Set<string>()
+  perStudent.forEach(m => m.forEach((_, code) => codes.add(code)))
+
+  const result: TagWeakness[] = []
+  codes.forEach(code => {
+    const weakest = students
+      .map((s): TagWeakStudent | null => {
+        const vals = perStudent.get(s.id)?.get(code)
+        if (!vals || vals.length === 0) return null
+        const avgScore = (vals.reduce((a, b) => a + b, 0) / vals.length) * 2
+        return avgScore < 1.5 ? { student: s, avgScore, count: vals.length } : null
+      })
+      .filter((x): x is TagWeakStudent => x !== null)
+      .sort((a, b) => a.avgScore - b.avgScore)
+      .slice(0, maxPerIndicator)
+    if (weakest.length > 0) result.push({ tag: code, weakest })
   })
   return result.sort((a, b) => a.tag.localeCompare(b.tag))
 }

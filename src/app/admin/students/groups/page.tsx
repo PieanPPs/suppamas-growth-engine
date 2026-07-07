@@ -2,17 +2,26 @@
 
 // จัดกลุ่มนักเรียนตามความสามารถ — ใช้คะแนนสะสมทั้งหมด (ไม่จำกัดตามเทอม เพราะจุดประสงค์คือ
 // ทบทวนภาพรวมย้อนหลังหลายเดือน) แบ่งนักเรียนแต่ละห้อง/วิชาเป็น 3 กลุ่ม: เก่ง/ปานกลาง/ควรดูแล
-// พร้อมชี้จุดอ่อนรายมาตรฐาน (academic_tags) ว่าใครยังไม่ผ่านเรื่องไหนบ้าง
+// สองแหล่งข้อมูลให้เลือก: (1) คะแนนรายคาบ/exit ticket ประจำวัน ผูกกับ academic_tags ของหน่วยการเรียนรู้
+// (2) ผลสอบจริง ผูกกับตัวชี้วัด — ครูสร้างข้อสอบจากตัวชี้วัดแล้วตรวจให้คะแนนรายข้อ ซึ่งแม่นกว่าเพราะ
+// วัดตรงเป็นรายข้อ ไม่ใช่คะแนนรวมทั้งฉบับเฉลี่ยลงทุกตัวชี้วัดเท่ากัน
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { Student, StudentAssessment, CurriculumModule, Course } from '@/lib/types'
-import { groupStudentsByAbility, weakStudentsByTag, StudentAbility } from '@/lib/analytics'
+import {
+  Student, StudentAssessment, CurriculumModule, Course, Test, TestItem, TestScore, TestItemResponse, Indicator,
+} from '@/lib/types'
+import {
+  groupStudentsByAbility, weakStudentsByTag, groupStudentsByIndicatorAbility, weakStudentsByIndicator,
+  StudentAbility,
+} from '@/lib/analytics'
 import { fetchAllPaged, latestAssessmentPerPlan } from '@/lib/db'
 import { getSchoolId } from '@/lib/school'
 import { RoomFilter, readStoredRoom, storeRoom } from '@/components/room-filter'
-import { Loader2, Users2, Gauge } from 'lucide-react'
+import { Loader2, Users2, Gauge, ClipboardCheck, NotebookPen } from 'lucide-react'
+
+type DataSource = 'tag' | 'indicator'
 
 const TIER_CFG = {
   strong: { label: 'เก่ง', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', badge: 'bg-green-100 text-green-700' },
@@ -28,21 +37,40 @@ export default function StudentGroupsPage() {
   const [modules, setModules] = useState<CurriculumModule[]>([])
   const [assessments, setAssessments] = useState<StudentAssessment[]>([])
   const [courses, setCourses] = useState<Course[]>([])
+  const [tests, setTests] = useState<Test[]>([])
+  const [testItems, setTestItems] = useState<TestItem[]>([])
+  const [testScores, setTestScores] = useState<TestScore[]>([])
+  const [testItemResponses, setTestItemResponses] = useState<TestItemResponse[]>([])
+  const [indicators, setIndicators] = useState<Indicator[]>([])
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null)
   const [selectedSubject, setSelectedSubject] = useState('')
+  const [source, setSource] = useState<DataSource>('tag')
 
   useEffect(() => {
     async function load() {
-      const [{ data: stds }, { data: mods }, asm, { data: crs }] = await Promise.all([
+      const [
+        { data: stds }, { data: mods }, asm, { data: crs },
+        { data: tst }, its, tsc, resp, { data: inds },
+      ] = await Promise.all([
         supabase.from('students').select('*').eq('school_id', schoolId).order('student_number'),
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId),
         fetchAllPaged<StudentAssessment>(() => supabase.from('student_assessments').select('*').eq('school_id', schoolId).order('id')),
         supabase.from('courses').select('*').eq('school_id', schoolId),
+        supabase.from('tests').select('*').eq('school_id', schoolId),
+        fetchAllPaged<TestItem>(() => supabase.from('test_items').select('*').order('test_id').order('item_no')),
+        fetchAllPaged<TestScore>(() => supabase.from('test_scores').select('*').eq('school_id', schoolId).order('id')),
+        fetchAllPaged<TestItemResponse>(() => supabase.from('test_item_responses').select('*').eq('school_id', schoolId).order('id')),
+        supabase.from('indicators').select('id, subject, code, description'),
       ])
       setStudents((stds ?? []) as Student[])
       setModules((mods ?? []) as CurriculumModule[])
       setAssessments(latestAssessmentPerPlan(asm))
       setCourses((crs ?? []) as Course[])
+      setTests((tst ?? []) as Test[])
+      setTestItems(its)
+      setTestScores(tsc)
+      setTestItemResponses(resp)
+      setIndicators((inds ?? []) as Indicator[])
       setLoading(false)
     }
     load()
@@ -58,8 +86,8 @@ export default function StudentGroupsPage() {
   }, [roomOptions.join(',')])
 
   const subjects = useMemo(
-    () => Array.from(new Set(modules.map(m => m.subject))).sort(),
-    [modules]
+    () => Array.from(new Set([...modules.map(m => m.subject), ...tests.map(t => t.subject)])).sort(),
+    [modules, tests]
   )
   useEffect(() => {
     if (subjects.length && !subjects.includes(selectedSubject)) setSelectedSubject(subjects[0])
@@ -77,17 +105,35 @@ export default function StudentGroupsPage() {
     [modules, selectedSubject]
   )
   const subjectModuleIds = useMemo(() => new Set(subjectModules.map(m => m.id)), [subjectModules])
+  const subjectTests = useMemo(
+    () => tests.filter(t => t.subject === selectedSubject),
+    [tests, selectedSubject]
+  )
 
-  const tiers = useMemo(
+  const tagTiers = useMemo(
     () => groupStudentsByAbility(visibleStudents, assessments, subjectModuleIds),
     [visibleStudents, assessments, subjectModuleIds]
   )
+  const indicatorTiers = useMemo(
+    () => groupStudentsByIndicatorAbility(visibleStudents, subjectTests, testItems, testScores, testItemResponses),
+    [visibleStudents, subjectTests, testItems, testScores, testItemResponses]
+  )
+  const tiers = source === 'tag' ? tagTiers : indicatorTiers
   const noData = visibleStudents.length - tiers.length
 
   const weakTags = useMemo(
     () => weakStudentsByTag(visibleStudents, assessments, subjectModules),
     [visibleStudents, assessments, subjectModules]
   )
+  const weakIndicators = useMemo(
+    () => weakStudentsByIndicator(visibleStudents, subjectTests, testItems, testScores, testItemResponses),
+    [visibleStudents, subjectTests, testItems, testScores, testItemResponses]
+  )
+  const weakList = source === 'tag' ? weakTags : weakIndicators
+
+  const indicatorLabel = (code: string) =>
+    indicators.find(i => i.subject === selectedSubject && i.code === code)?.description
+    ?? indicators.find(i => i.code === code)?.description ?? ''
 
   const byTier = (tier: StudentAbility['tier']) => tiers.filter(t => t.tier === tier)
 
@@ -108,6 +154,22 @@ export default function StudentGroupsPage() {
 
       <RoomFilter rooms={roomOptions} value={selectedRoom} onChange={r => { setSelectedRoom(r); storeRoom(r) }} />
 
+      {/* แหล่งข้อมูล: คะแนนรายคาบประจำวัน (academic_tags) vs ผลสอบจริงรายข้อ (ตัวชี้วัด) */}
+      <div className="flex gap-1.5 bg-gray-100 rounded-2xl p-1">
+        <button onClick={() => setSource('tag')}
+          className={`flex-1 text-xs font-semibold py-2 rounded-xl flex items-center justify-center gap-1.5 transition-all ${
+            source === 'tag' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
+          }`}>
+          <NotebookPen size={13} /> คะแนนรายคาบ
+        </button>
+        <button onClick={() => setSource('indicator')}
+          className={`flex-1 text-xs font-semibold py-2 rounded-xl flex items-center justify-center gap-1.5 transition-all ${
+            source === 'indicator' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
+          }`}>
+          <ClipboardCheck size={13} /> ผลสอบจริง (รายข้อ)
+        </button>
+      </div>
+
       {subjects.length > 0 && (
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
           {subjects.map(s => (
@@ -123,7 +185,9 @@ export default function StudentGroupsPage() {
 
       {tiers.length === 0 ? (
         <p className="text-center text-sm text-gray-400 py-12 border border-dashed border-gray-200 rounded-2xl">
-          ยังไม่มีข้อมูลการประเมินในวิชานี้{selectedRoom ? `สำหรับห้อง ${selectedRoom}` : ''}
+          {source === 'tag'
+            ? `ยังไม่มีข้อมูลการประเมินรายคาบในวิชานี้${selectedRoom ? `สำหรับห้อง ${selectedRoom}` : ''}`
+            : `ยังไม่มีข้อสอบที่ตรวจแล้วในวิชานี้${selectedRoom ? `สำหรับห้อง ${selectedRoom}` : ''} — ต้องผูกตัวชี้วัดกับข้อสอบและตรวจให้คะแนนรายข้อก่อน`}
         </p>
       ) : (
         <>
@@ -154,14 +218,20 @@ export default function StudentGroupsPage() {
             </p>
           )}
 
-          {weakTags.length > 0 && (
+          {weakList.length > 0 && (
             <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
               <p className="text-sm font-bold text-gray-700 flex items-center gap-1.5">
-                <Gauge size={15} className="text-orange-500" /> จุดอ่อนรายมาตรฐาน — ใครยังไม่ผ่านเรื่องไหน
+                <Gauge size={15} className="text-orange-500" />
+                {source === 'tag' ? 'จุดอ่อนรายมาตรฐาน (จากรายคาบ) — ใครยังไม่ผ่านเรื่องไหน' : 'จุดอ่อนรายตัวชี้วัด (จากผลสอบจริง) — ใครยังไม่ผ่านข้อไหน'}
               </p>
-              {weakTags.map(({ tag, weakest }) => (
+              {weakList.map(({ tag, weakest }) => (
                 <div key={tag} className="space-y-1">
-                  <p className="text-xs font-semibold text-gray-600">{tag}</p>
+                  <p className="text-xs font-semibold text-gray-600">
+                    {tag}
+                    {source === 'indicator' && indicatorLabel(tag) && (
+                      <span className="text-[10px] font-normal text-gray-400"> — {indicatorLabel(tag)}</span>
+                    )}
+                  </p>
                   <div className="flex flex-wrap gap-1.5">
                     {weakest.map(w => (
                       <Link key={w.student.id} href={`/admin/students/${w.student.id}`}

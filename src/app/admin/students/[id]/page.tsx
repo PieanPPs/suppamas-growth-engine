@@ -5,13 +5,13 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import {
-  Student, StudentAssessment, CurriculumModule, Test, TestIndicator, TestScore, Indicator,
+  Student, StudentAssessment, CurriculumModule, Test, TestItem, TestScore, TestItemResponse, Indicator,
 } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StudentRadar } from '@/components/student-radar'
 import {
   buildStudentTagScores, buildBehaviorSubjectScores, buildFocusBreakdown, average,
-  splitStrengthsWeaknesses, TagScore, FocusBreakdown,
+  splitStrengthsWeaknesses, buildStudentIndicatorScores, TagScore, FocusBreakdown,
 } from '@/lib/analytics'
 import { latestAssessmentPerPlan } from '@/lib/db'
 import { Loader2, ArrowLeft, Share2, Star, TrendingUp, TrendingDown } from 'lucide-react'
@@ -30,25 +30,31 @@ export default function StudentDetailPage() {
   const [avgSoft, setAvgSoft] = useState(0)
   const [loading, setLoading] = useState(true)
   const [assessmentCount, setAssessmentCount] = useState(0)
+  const [indicatorDesc, setIndicatorDesc] = useState<Map<string, string>>(new Map())
 
   const { strengths, weaknesses } = useMemo(
     () => splitStrengthsWeaknesses(tagScores),
     [tagScores]
+  )
+  const { strengths: examStrengths, weaknesses: examWeaknesses } = useMemo(
+    () => splitStrengthsWeaknesses(testTagScores),
+    [testTagScores]
   )
 
   useEffect(() => {
     async function load() {
       const [
         { data: s }, { data: modules }, { data: assessments },
-        { data: tests }, { data: testInds }, { data: testScores }, { data: inds },
+        { data: tests }, { data: testItems }, { data: testScores }, { data: testItemResponses }, { data: inds },
       ] = await Promise.all([
         supabase.from('students').select('*').eq('id', studentId).single(),
         supabase.from('curriculum_modules').select('*'),
         supabase.from('student_assessments').select('*').eq('student_id', studentId),
         supabase.from('tests').select('*'),
-        supabase.from('test_indicators').select('*'),
+        supabase.from('test_items').select('*'),
         supabase.from('test_scores').select('*').eq('student_id', studentId),
-        supabase.from('indicators').select('id, code'),
+        supabase.from('test_item_responses').select('*').eq('student_id', studentId),
+        supabase.from('indicators').select('id, code, description'),
       ])
 
       setStudent(s)
@@ -59,32 +65,20 @@ export default function StudentDetailPage() {
       setBehaviorScores(buildBehaviorSubjectScores(list, moduleMap))
       setAssessmentCount(list.length)
 
-      // summative: % per indicator from real tests, scaled to the same 0-2 axis
-      const testById = new Map(((tests ?? []) as Test[]).map(t => [t.id, t]))
-      const codeById = new Map(((inds ?? []) as Pick<Indicator, 'id' | 'code'>[]).map(i => [i.id, i.code]))
-      const indsByTest = new Map<string, string[]>()
-      ;((testInds ?? []) as TestIndicator[]).forEach(ti => {
-        if (!indsByTest.has(ti.test_id)) indsByTest.set(ti.test_id, [])
-        const code = codeById.get(ti.indicator_id)
-        if (code) indsByTest.get(ti.test_id)!.push(code)
-      })
-      const buckets = new Map<string, number[]>()
-      ;((testScores ?? []) as TestScore[]).forEach(sc => {
-        const t = testById.get(sc.test_id)
-        if (!t || t.max_score <= 0) return
-        const pct = Math.min(1, sc.score / t.max_score)
-        ;(indsByTest.get(sc.test_id) ?? []).forEach(code => {
-          if (!buckets.has(code)) buckets.set(code, [])
-          buckets.get(code)!.push(pct)
-        })
-      })
-      setTestTagScores(
-        Array.from(buckets.entries()).map(([tag, pcts]) => ({
-          tag,
-          avgScore: +(pcts.reduce((a, b) => a + b, 0) / pcts.length * 2).toFixed(2),
-          count: pcts.length,
-        }))
-      )
+      // Summative: exact per-item exam results (test_items.indicator_code + test_item_responses),
+      // not just the whole test's aggregate score spread evenly across its indicators — a student
+      // who nails half the indicators on a test and misses the rest should show that split, not
+      // one blended percentage on every indicator the test happened to cover.
+      setTestTagScores(buildStudentIndicatorScores(
+        studentId,
+        (tests ?? []) as Test[],
+        (testItems ?? []) as TestItem[],
+        (testScores ?? []) as TestScore[],
+        (testItemResponses ?? []) as TestItemResponse[],
+      ))
+      setIndicatorDesc(new Map(
+        ((inds ?? []) as Pick<Indicator, 'code' | 'description'>[]).map(i => [i.code, i.description])
+      ))
       setFocus(buildFocusBreakdown(list))
       setAvgAcademic(average(list.map(a => a.academic_score)))
       setAvgSoft(average(list.map(a => a.soft_skill_score)))
@@ -173,6 +167,44 @@ export default function StudentDetailPage() {
                 <div key={t.tag} className="bg-red-50 border border-red-100 rounded-xl px-2.5 py-1.5">
                   <p className="text-xs font-semibold text-red-800 leading-snug">{t.tag}</p>
                   <p className="text-[10px] text-red-500">{t.avgScore.toFixed(1)}/2 · {t.count} ครั้ง</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Strengths / weaknesses from REAL exams — per-item results tied to indicator codes,
+          distinct source from the daily exit-ticket tags above (teachers build tests from
+          indicators and grade item-by-item, so this reflects actual test performance) */}
+      {testTagScores.length > 0 && (
+        <Card className="border border-gray-200 shadow-sm">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold text-gray-800">
+              เก่งด้านไหน อ่อนด้านไหน (จากผลสอบจริง)
+            </CardTitle>
+            <p className="text-xs text-gray-400">อ้างอิงตัวชี้วัดที่ผูกไว้กับข้อสอบแต่ละข้อ (ไม่ใช่คะแนนรายคาบ)</p>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <p className="text-xs font-bold text-green-700 flex items-center gap-1"><TrendingUp size={13} /> จุดแข็ง</p>
+              {examStrengths.length === 0 && <p className="text-xs text-gray-300">—</p>}
+              {examStrengths.map(t => (
+                <div key={t.tag} className="bg-green-50 border border-green-100 rounded-xl px-2.5 py-1.5">
+                  <p className="text-xs font-semibold text-green-800 leading-snug">{t.tag}</p>
+                  {indicatorDesc.get(t.tag) && <p className="text-[10px] text-green-500 leading-snug line-clamp-2">{indicatorDesc.get(t.tag)}</p>}
+                  <p className="text-[10px] text-green-600">{t.avgScore.toFixed(1)}/2 · {t.count} ข้อ</p>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-xs font-bold text-red-600 flex items-center gap-1"><TrendingDown size={13} /> ควรเสริม</p>
+              {examWeaknesses.length === 0 && <p className="text-xs text-gray-300">—</p>}
+              {examWeaknesses.map(t => (
+                <div key={t.tag} className="bg-red-50 border border-red-100 rounded-xl px-2.5 py-1.5">
+                  <p className="text-xs font-semibold text-red-800 leading-snug">{t.tag}</p>
+                  {indicatorDesc.get(t.tag) && <p className="text-[10px] text-red-400 leading-snug line-clamp-2">{indicatorDesc.get(t.tag)}</p>}
+                  <p className="text-[10px] text-red-500">{t.avgScore.toFixed(1)}/2 · {t.count} ข้อ</p>
                 </div>
               ))}
             </div>
