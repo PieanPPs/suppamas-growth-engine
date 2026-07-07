@@ -187,6 +187,15 @@ export default function TeacherOverviewPage() {
         </div>
       </motion.section>
 
+      {/* เข้าดูรายบุคคล + จัดกลุ่มนักเรียนเอง (คะแนนรายคาบ + ผลสอบจริง + พัฒนาการข้ามเดือน) */}
+      <Link href="/teacher/students"
+        className="flex items-center justify-between bg-white border border-gray-200 rounded-2xl px-4 py-3 shadow-sm hover:border-blue-300">
+        <span className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+          <Users size={15} className="text-blue-500" /> ดูรายบุคคล / จัดกลุ่มนักเรียนตามความสามารถ
+        </span>
+        <span className="text-xs text-blue-600 font-semibold">เปิดดู →</span>
+      </Link>
+
       {/* Hazard alerts */}
       {hazards.map(h => (
         <div key={h.module.id} className="border border-red-300 bg-red-50 rounded-2xl p-3">

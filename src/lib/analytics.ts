@@ -254,6 +254,27 @@ export function weakStudentsByIndicator(
   return result.sort((a, b) => a.tag.localeCompare(b.tag))
 }
 
+export interface MonthlyTrendPoint { month: string; avgScore: number; count: number }
+
+/** Bucket a student's academic_score by month (from created_at) so a UI can plot progress
+ *  over time — a single overall average hides whether a student is improving or sliding,
+ *  which matters once several months of exit tickets have accumulated. */
+export function buildMonthlyAcademicTrend(assessments: StudentAssessment[]): MonthlyTrendPoint[] {
+  const buckets = new Map<string, number[]>()
+  for (const a of assessments) {
+    const month = a.created_at.slice(0, 7) // YYYY-MM
+    if (!buckets.has(month)) buckets.set(month, [])
+    buckets.get(month)!.push(a.academic_score)
+  }
+  return Array.from(buckets.entries())
+    .map(([month, scores]) => ({
+      month,
+      avgScore: scores.reduce((a, b) => a + b, 0) / scores.length,
+      count: scores.length,
+    }))
+    .sort((a, b) => a.month.localeCompare(b.month))
+}
+
 export type FocusBreakdown = { green: number; yellow: number; red: number; total: number }
 
 export function buildFocusBreakdown(assessments: StudentAssessment[]): FocusBreakdown {

@@ -11,10 +11,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StudentRadar } from '@/components/student-radar'
 import {
   buildStudentTagScores, buildBehaviorSubjectScores, buildFocusBreakdown, average,
-  splitStrengthsWeaknesses, buildStudentIndicatorScores, TagScore, FocusBreakdown,
+  splitStrengthsWeaknesses, buildStudentIndicatorScores, buildMonthlyAcademicTrend,
+  TagScore, FocusBreakdown, MonthlyTrendPoint,
 } from '@/lib/analytics'
 import { latestAssessmentPerPlan } from '@/lib/db'
-import { Loader2, ArrowLeft, Share2, Star, TrendingUp, TrendingDown } from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { Loader2, ArrowLeft, Share2, Star, TrendingUp, TrendingDown, LineChart as LineChartIcon } from 'lucide-react'
+
+function formatMonthLabel(ym: string): string {
+  const [y, m] = ym.split('-').map(Number)
+  return new Date(y, m - 1, 1).toLocaleDateString('th-TH', { month: 'short', year: '2-digit' })
+}
 
 export default function StudentDetailPage() {
   const params = useParams()
@@ -31,6 +38,7 @@ export default function StudentDetailPage() {
   const [loading, setLoading] = useState(true)
   const [assessmentCount, setAssessmentCount] = useState(0)
   const [indicatorDesc, setIndicatorDesc] = useState<Map<string, string>>(new Map())
+  const [monthlyTrend, setMonthlyTrend] = useState<MonthlyTrendPoint[]>([])
 
   const { strengths, weaknesses } = useMemo(
     () => splitStrengthsWeaknesses(tagScores),
@@ -64,6 +72,7 @@ export default function StudentDetailPage() {
       setTagScores(buildStudentTagScores(list, moduleMap))
       setBehaviorScores(buildBehaviorSubjectScores(list, moduleMap))
       setAssessmentCount(list.length)
+      setMonthlyTrend(buildMonthlyAcademicTrend(list))
 
       // Summative: exact per-item exam results (test_items.indicator_code + test_item_responses),
       // not just the whole test's aggregate score spread evenly across its indicators — a student
@@ -97,7 +106,7 @@ export default function StudentDetailPage() {
 
   return (
     <div className="space-y-4 pb-4">
-      <Link href="/admin/students" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
+      <Link href="/teacher/students" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
         <ArrowLeft size={16} /> กลับ
       </Link>
 
@@ -208,6 +217,33 @@ export default function StudentDetailPage() {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* พัฒนาการข้ามเดือน — คะแนนเฉลี่ยเดียวไม่บอกว่าดีขึ้นหรือแย่ลง ต้องดูเป็นเส้นตามเวลา
+          โดยเฉพาะเมื่อผ่านไปหลายเดือนแล้วอยากรู้ว่าต้องปรับแผนตรงไหน */}
+      {monthlyTrend.length > 0 && (
+        <Card className="border border-gray-200 shadow-sm">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+              <LineChartIcon size={15} className="text-blue-500" /> พัฒนาการข้ามเดือน
+            </CardTitle>
+            <p className="text-xs text-gray-400">คะแนนรายคาบเฉลี่ยแต่ละเดือน (เต็ม 2)</p>
+          </CardHeader>
+          <CardContent className="px-2 pb-4">
+            {monthlyTrend.length < 2 ? (
+              <p className="text-xs text-gray-400 text-center py-6">ต้องมีข้อมูลอย่างน้อย 2 เดือนถึงจะดูแนวโน้มได้</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={monthlyTrend.map(t => ({ ...t, label: formatMonthLabel(t.month) }))} margin={{ top: 8, right: 16, left: -18, bottom: 0 }}>
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#6b7280' }} />
+                  <YAxis domain={[0, 2]} tick={{ fontSize: 10, fill: '#9ca3af' }} tickCount={3} />
+                  <Tooltip formatter={(v) => [typeof v === 'number' ? v.toFixed(2) : '', 'คะแนนเฉลี่ย']} />
+                  <Line type="monotone" dataKey="avgScore" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 4, fill: '#2563eb' }} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
       )}

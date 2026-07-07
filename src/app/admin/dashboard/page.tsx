@@ -244,7 +244,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-5 gap-2">
         {[
           { href: '/admin/pacing', icon: Gauge, label: 'วิเคราะห์ไขว้', tint: 'bg-indigo-50 text-indigo-600' },
-          { href: '/admin/students', icon: Users, label: 'รายบุคคล', tint: 'bg-sky-50 text-sky-600' },
+          { href: '/teacher/students', icon: Users, label: 'รายบุคคล', tint: 'bg-sky-50 text-sky-600' },
           { href: '/heroes', icon: Trophy, label: 'ฮีโร่', tint: 'bg-amber-50 text-amber-600' },
           { href: '/admin/impact', icon: Flag, label: 'Impact', tint: 'bg-rose-50 text-rose-600' },
           { href: '/admin/manage', icon: Wrench, label: 'หลังบ้าน', tint: 'bg-slate-100 text-slate-600' },

@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Student, StudentAssessment } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { average } from '@/lib/analytics'
 import { fetchAllPaged, latestAssessmentPerPlan } from '@/lib/db'
+import { getSchoolId } from '@/lib/school'
+import { getSession } from '@/lib/auth'
 import { RoomFilter } from '@/components/room-filter'
 import { Loader2, ChevronRight, User, Users2 } from 'lucide-react'
 
@@ -14,16 +16,30 @@ type StudentRow = Student & { avgScore: number; count: number }
 
 export default function StudentsPage() {
   const supabase = createClient()
+  const schoolId = getSchoolId()
   const [rows, setRows] = useState<StudentRow[]>([])
+  const [boundRooms, setBoundRooms] = useState<string[]>([])
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
+      const session = getSession()
       const [{ data: students }, assessments] = await Promise.all([
-        supabase.from('students').select('*').order('name'),
-        fetchAllPaged<StudentAssessment>(() => supabase.from('student_assessments').select('*').order('id')),
+        supabase.from('students').select('*').eq('school_id', schoolId).order('name'),
+        fetchAllPaged<StudentAssessment>(() => supabase.from('student_assessments').select('*').eq('school_id', schoolId).order('id')),
       ])
+
+      // เฉพาะครู: ย่อรายชื่อเหลือแค่ห้องที่ผูกไว้ (ไม่ผูก = เห็นทุกห้อง เหมือนหน้าอื่นๆ)
+      if (session?.role === 'teacher' && session.userId) {
+        const { data: links } = await supabase
+          .from('teacher_classrooms').select('classrooms(name)').eq('teacher_id', session.userId)
+        const names = (links ?? [])
+          .map((r: { classrooms: { name: string } | { name: string }[] | null }) =>
+            Array.isArray(r.classrooms) ? r.classrooms[0]?.name : r.classrooms?.name)
+          .filter(Boolean) as string[]
+        setBoundRooms(names)
+      }
 
       const byStudent = new Map<string, StudentAssessment[]>()
       latestAssessmentPerPlan(assessments).forEach(a => {
@@ -46,6 +62,12 @@ export default function StudentsPage() {
     load()
   }, [])
 
+  const visibleRows = useMemo(
+    () => boundRooms.length > 0 ? rows.filter(r => boundRooms.includes(r.class_name)) : rows,
+    [rows, boundRooms]
+  )
+  const roomOptions = Array.from(new Set(visibleRows.map(r => r.class_name).filter(Boolean))).sort()
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -61,7 +83,7 @@ export default function StudentsPage() {
           <h2 className="text-xl font-bold text-gray-900">รายงานรายบุคคล</h2>
           <p className="text-sm text-gray-500 mt-1">เลือกนักเรียนเพื่อดูจุดแข็ง–จุดอ่อน</p>
         </div>
-        <Link href="/admin/students/groups"
+        <Link href="/teacher/students/groups"
           className="flex-shrink-0 flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-xl">
           <Users2 size={14} /> จัดกลุ่มตามความสามารถ
         </Link>
@@ -69,14 +91,14 @@ export default function StudentsPage() {
 
       {/* เลือกห้อง */}
       <RoomFilter
-        rooms={Array.from(new Set(rows.map(r => r.class_name).filter(Boolean))).sort()}
+        rooms={roomOptions}
         value={selectedRoom}
         onChange={setSelectedRoom}
       />
 
       <div className="space-y-2">
-        {(selectedRoom ? rows.filter(r => r.class_name === selectedRoom) : rows).map(s => (
-          <Link key={s.id} href={`/admin/students/${s.id}`}>
+        {(selectedRoom ? visibleRows.filter(r => r.class_name === selectedRoom) : visibleRows).map(s => (
+          <Link key={s.id} href={`/teacher/students/${s.id}`}>
             <Card className="border border-gray-200 shadow-sm hover:border-blue-300 transition-colors">
               <CardContent className="px-4 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -102,7 +124,7 @@ export default function StudentsPage() {
             </Card>
           </Link>
         ))}
-        {rows.length === 0 && (
+        {visibleRows.length === 0 && (
           <p className="text-sm text-gray-400 text-center py-8">ยังไม่มีข้อมูลนักเรียน</p>
         )}
       </div>

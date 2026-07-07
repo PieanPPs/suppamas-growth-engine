@@ -18,6 +18,7 @@ import {
 } from '@/lib/analytics'
 import { fetchAllPaged, latestAssessmentPerPlan } from '@/lib/db'
 import { getSchoolId } from '@/lib/school'
+import { getSession } from '@/lib/auth'
 import { RoomFilter, readStoredRoom, storeRoom } from '@/components/room-filter'
 import { Loader2, Users2, Gauge, ClipboardCheck, NotebookPen } from 'lucide-react'
 
@@ -42,12 +43,15 @@ export default function StudentGroupsPage() {
   const [testScores, setTestScores] = useState<TestScore[]>([])
   const [testItemResponses, setTestItemResponses] = useState<TestItemResponse[]>([])
   const [indicators, setIndicators] = useState<Indicator[]>([])
+  const [boundRooms, setBoundRooms] = useState<string[]>([])
+  const [teacherSubjects, setTeacherSubjects] = useState<string[]>([])
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null)
   const [selectedSubject, setSelectedSubject] = useState('')
   const [source, setSource] = useState<DataSource>('tag')
 
   useEffect(() => {
     async function load() {
+      const session = getSession()
       const [
         { data: stds }, { data: mods }, asm, { data: crs },
         { data: tst }, its, tsc, resp, { data: inds },
@@ -71,34 +75,49 @@ export default function StudentGroupsPage() {
       setTestScores(tsc)
       setTestItemResponses(resp)
       setIndicators((inds ?? []) as Indicator[])
+
+      // เฉพาะครู: ย่อห้อง/วิชาเหลือแค่ของตัวเอง (ไม่ผูก = เห็นทุกห้อง/วิชา เหมือนหน้าอื่นๆ)
+      if (session?.role === 'teacher' && session.userId) {
+        const [{ data: links }, { data: teacherRow }] = await Promise.all([
+          supabase.from('teacher_classrooms').select('classrooms(name)').eq('teacher_id', session.userId),
+          supabase.from('teachers').select('subjects').eq('id', session.userId).maybeSingle(),
+        ])
+        const names = (links ?? [])
+          .map((r: { classrooms: { name: string } | { name: string }[] | null }) =>
+            Array.isArray(r.classrooms) ? r.classrooms[0]?.name : r.classrooms?.name)
+          .filter(Boolean) as string[]
+        setBoundRooms(names)
+        setTeacherSubjects(teacherRow?.subjects ?? [])
+      }
       setLoading(false)
     }
     load()
   }, [])
 
-  const roomOptions = useMemo(
-    () => Array.from(new Set(students.map(s => s.class_name).filter(Boolean))).sort(),
-    [students]
-  )
+  const roomOptions = useMemo(() => {
+    const all = Array.from(new Set(students.map(s => s.class_name).filter(Boolean))).sort()
+    return boundRooms.length > 0 ? all.filter(r => boundRooms.includes(r)) : all
+  }, [students, boundRooms])
   useEffect(() => {
     if (roomOptions.length === 0) return
     setSelectedRoom(prev => (prev && roomOptions.includes(prev)) ? prev : readStoredRoom(roomOptions))
   }, [roomOptions.join(',')])
 
-  const subjects = useMemo(
-    () => Array.from(new Set([...modules.map(m => m.subject), ...tests.map(t => t.subject)])).sort(),
-    [modules, tests]
-  )
+  const subjects = useMemo(() => {
+    const all = Array.from(new Set([...modules.map(m => m.subject), ...tests.map(t => t.subject)])).sort()
+    return teacherSubjects.length > 0 ? all.filter(s => teacherSubjects.includes(s)) : all
+  }, [modules, tests, teacherSubjects])
   useEffect(() => {
     if (subjects.length && !subjects.includes(selectedSubject)) setSelectedSubject(subjects[0])
   }, [subjects.join(',')])
 
   const courseName = (key: string) => courses.find(c => c.subject_key === key)?.name ?? key.replace('_', ' ')
 
-  const visibleStudents = useMemo(
-    () => selectedRoom ? students.filter(s => s.class_name === selectedRoom) : students,
-    [students, selectedRoom]
-  )
+  const visibleStudents = useMemo(() => {
+    // "ทุกห้อง" ของครูที่ผูกห้องไว้ ต้องหมายถึงทุกห้องของครูคนนั้น ไม่ใช่ทั้งโรงเรียน
+    if (selectedRoom) return students.filter(s => s.class_name === selectedRoom)
+    return boundRooms.length > 0 ? students.filter(s => boundRooms.includes(s.class_name)) : students
+  }, [students, selectedRoom, boundRooms])
 
   const subjectModules = useMemo(
     () => modules.filter(m => m.subject === selectedSubject),
@@ -200,7 +219,7 @@ export default function StudentGroupsPage() {
                   <p className={`text-xs font-bold ${cfg.text} mb-1.5 text-center`}>{cfg.label} ({list.length})</p>
                   <div className="space-y-1">
                     {list.map(a => (
-                      <Link key={a.student.id} href={`/admin/students/${a.student.id}`}
+                      <Link key={a.student.id} href={`/teacher/students/${a.student.id}`}
                         className="flex items-center justify-between bg-white/70 hover:bg-white rounded-lg px-2 py-1.5">
                         <span className="text-[11px] font-medium text-gray-700 truncate">{a.student.name}</span>
                         <span className={`text-[10px] font-bold px-1 rounded ${cfg.badge} flex-shrink-0`}>{a.avgScore.toFixed(1)}</span>
@@ -234,7 +253,7 @@ export default function StudentGroupsPage() {
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {weakest.map(w => (
-                      <Link key={w.student.id} href={`/admin/students/${w.student.id}`}
+                      <Link key={w.student.id} href={`/teacher/students/${w.student.id}`}
                         className="flex items-center gap-1 text-[11px] bg-orange-50 text-orange-700 border border-orange-100 rounded-full px-2 py-1 hover:bg-orange-100">
                         {w.student.name}
                         <span className="font-bold">{w.avgScore.toFixed(1)}</span>
