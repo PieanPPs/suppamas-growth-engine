@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
-import { CurriculumModule, PacingLog, StudentAssessment, Student } from '@/lib/types'
+import { CurriculumModule, PacingLog, StudentAssessment, Student, Indicator } from '@/lib/types'
 import { computeAtRiskStudents, RiskWarning } from '@/lib/predictive'
+import { buildModuleTagSummary, TagScore } from '@/lib/analytics'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer,
@@ -31,13 +32,12 @@ type ModuleSummary = {
   isHazard: boolean
 }
 
-type TagSummary = { tag: string; avgScore: number; count: number }
-
 export default function TeacherOverviewPage() {
   const supabase = createClient()
   const schoolId = getSchoolId()
   const [summaries, setSummaries] = useState<ModuleSummary[]>([])
-  const [tagData, setTagData] = useState<TagSummary[]>([])
+  const [tagData, setTagData] = useState<TagScore[]>([])
+  const [indicatorDesc, setIndicatorDesc] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(true)
   const [totalStudents, setTotalStudents] = useState(0)
   const [grades, setGrades] = useState<string[]>([])
@@ -66,7 +66,7 @@ export default function TeacherOverviewPage() {
 
       const termStart = await getTermStartISO(supabase, schoolId)
 
-      const [{ data: modules }, pacings, assessments, { data: students }] =
+      const [{ data: modules }, pacings, assessments, { data: students }, { data: inds }] =
         await Promise.all([
           supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
           // NOT term-scoped: pacing status is cumulative per module (latest-wins below).
@@ -78,7 +78,11 @@ export default function TeacherOverviewPage() {
             return q.order('id')
           }),
           supabase.from('students').select('*').eq('school_id', schoolId),
+          supabase.from('indicators').select('subject, code, description'),
         ])
+      setIndicatorDesc(new Map(
+        ((inds ?? []) as Pick<Indicator, 'subject' | 'code' | 'description'>[]).map(i => [`${i.subject}::${i.code}`, i.description])
+      ))
 
       if (!modules) { setLoading(false); return }
 
@@ -121,17 +125,7 @@ export default function TeacherOverviewPage() {
 
       setSummaries(built)
 
-      const tagMap = new Map<string, number[]>()
-      built.forEach(s => {
-        if (!s.studentCount) return
-        s.module.academic_tags.forEach(tag => {
-          if (!tagMap.has(tag)) tagMap.set(tag, [])
-          tagMap.get(tag)!.push(s.avgScore)
-        })
-      })
-      setTagData(Array.from(tagMap.entries())
-        .map(([tag, scores]) => ({ tag, avgScore: scores.reduce((a, b) => a + b, 0) / scores.length, count: scores.length }))
-        .sort((a, b) => a.tag.localeCompare(b.tag)))
+      setTagData(buildModuleTagSummary(built))
 
       setLoading(false)
     }
@@ -145,6 +139,12 @@ export default function TeacherOverviewPage() {
   }))
   const hazards = summaries.filter(s => s.isHazard)
   const completedModules = summaries.filter(s => s.pacing?.status === 'Completed').length
+  const describeTag = (t: TagScore) => indicatorDesc.get(`${t.subject}::${t.tag}`)
+  const weakestTags = [...tagData].sort((a, b) => a.avgScore - b.avgScore).slice(0, 3)
+  // RiskWarning.weakTags has no subject context (see predictive.ts) — best-effort lookup by
+  // code alone, ignoring subject, since a bare code is still more useful than none at all here.
+  const describeByCode = (code: string) =>
+    Array.from(indicatorDesc.entries()).find(([k]) => k.endsWith(`::${code}`))?.[1]
 
   if (loading) {
     return <div className="flex items-center justify-center py-20"><Loader2 className="animate-spin text-blue-500" size={32} /></div>
@@ -223,7 +223,7 @@ export default function TeacherOverviewPage() {
                   <p className="text-sm font-semibold text-gray-800">{w.student.name}</p>
                   <p className="text-xs text-orange-600">
                     {w.trend === 'declining' ? 'คะแนนลดลงต่อเนื่อง' : 'คะแนนต่ำต่อเนื่อง'}
-                    {w.weakTags.length > 0 && <> · จุดอ่อน: {w.weakTags.join(', ')}</>}
+                    {w.weakTags.length > 0 && <> · จุดอ่อน: {w.weakTags.map(t => describeByCode(t) ?? t).join(', ')}</>}
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
@@ -248,6 +248,7 @@ export default function TeacherOverviewPage() {
             <CardTitle className="text-sm font-semibold text-gray-800 flex items-center gap-2">
               <TrendingUp size={16} className="text-blue-500" /> คะแนนเฉลี่ยตามมาตรฐานการเรียนรู้
             </CardTitle>
+            <p className="text-xs text-gray-400">แกนคือรหัสตัวชี้วัด (เช่น &quot;ป.3/1&quot;) แตะดูคำอธิบายได้ ไม่ใช่ชื่อห้องเรียน</p>
           </CardHeader>
           <CardContent className="px-2 pb-4">
             <ResponsiveContainer width="100%" height={240}>
@@ -255,9 +256,30 @@ export default function TeacherOverviewPage() {
                 <PolarGrid stroke="#e5e7eb" />
                 <PolarAngleAxis dataKey="tag" tick={{ fontSize: 11, fill: '#6b7280' }} />
                 <Radar dataKey="avgScore" stroke="#0d9488" fill="#0d9488" fillOpacity={0.25} strokeWidth={2} />
+                <Tooltip content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null
+                  const t = payload[0].payload as TagScore
+                  return (
+                    <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-2.5 py-1.5 max-w-[200px]">
+                      <p className="text-xs font-bold text-gray-800">{t.tag}</p>
+                      {describeTag(t) && <p className="text-[10px] text-gray-500 leading-snug">{describeTag(t)}</p>}
+                      <p className="text-[10px] text-teal-600 font-semibold mt-0.5">{t.avgScore.toFixed(2)}/2</p>
+                    </div>
+                  )
+                }} />
               </RadarChart>
             </ResponsiveContainer>
             <p className="text-xs text-gray-400 text-center mt-1">คะแนนสูงสุด = 2.0</p>
+            {weakestTags.length > 0 && (
+              <div className="mt-3 space-y-1 border-t border-gray-100 pt-2">
+                <p className="text-xs font-bold text-amber-700">จุดที่ควรเสริม</p>
+                {weakestTags.map(t => (
+                  <p key={`${t.subject}-${t.tag}`} className="text-[11px] text-gray-600">
+                    <span className="font-semibold">{t.tag}</span> ({t.avgScore.toFixed(1)}/2){describeTag(t) ? ` — ${describeTag(t)}` : ''}
+                  </p>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

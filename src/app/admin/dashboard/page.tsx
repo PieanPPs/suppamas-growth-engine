@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
-import { CurriculumModule, PacingLog, StudentAssessment, Student } from '@/lib/types'
+import { CurriculumModule, PacingLog, StudentAssessment, Student, Indicator } from '@/lib/types'
 import { computeAtRiskStudents, RiskWarning } from '@/lib/predictive'
+import { buildModuleTagSummary, TagScore } from '@/lib/analytics'
 import { fetchAllPaged, getTermStartISO, latestAssessmentPerPlan } from '@/lib/db'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -27,17 +28,12 @@ type ModuleSummary = {
   isHazard: boolean
 }
 
-type TagSummary = {
-  tag: string
-  avgScore: number
-  count: number
-}
-
 export default function DashboardPage() {
   const supabase = createClient()
   const schoolId = getSchoolId()
   const [summaries, setSummaries] = useState<ModuleSummary[]>([])
-  const [tagData, setTagData] = useState<TagSummary[]>([])
+  const [tagData, setTagData] = useState<TagScore[]>([])
+  const [indicatorDesc, setIndicatorDesc] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(true)
   const [totalStudents, setTotalStudents] = useState(0)
   const [completedModules, setCompletedModules] = useState(0)
@@ -54,6 +50,7 @@ export default function DashboardPage() {
         pacings,
         assessments,
         { data: students },
+        { data: inds },
       ] = await Promise.all([
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
         // NOT term-scoped: pacing status is cumulative per module (latest-wins below), so a
@@ -67,9 +64,13 @@ export default function DashboardPage() {
           return q.order('id')
         }),
         supabase.from('students').select('*').eq('school_id', schoolId),
+        supabase.from('indicators').select('subject, code, description'),
       ])
 
       if (!modules) { setLoading(false); return }
+      setIndicatorDesc(new Map(
+        ((inds ?? []) as Pick<Indicator, 'subject' | 'code' | 'description'>[]).map(i => [`${i.subject}::${i.code}`, i.description])
+      ))
 
       const dedupedAssessments = latestAssessmentPerPlan((assessments ?? []) as StudentAssessment[])
 
@@ -131,25 +132,7 @@ export default function DashboardPage() {
       setCompletedModules(built.filter(s => s.pacing?.status === 'Completed').length)
       setHazardCount(built.filter(s => s.isHazard).length)
 
-      // Build tag-level radar data
-      const tagMap = new Map<string, number[]>()
-      built.forEach(summary => {
-        if (summary.studentCount === 0) return
-        summary.module.academic_tags.forEach(tag => {
-          if (!tagMap.has(tag)) tagMap.set(tag, [])
-          tagMap.get(tag)!.push(summary.avgScore)
-        })
-      })
-
-      const tags: TagSummary[] = Array.from(tagMap.entries())
-        .map(([tag, scores]) => ({
-          tag,
-          avgScore: scores.reduce((a, b) => a + b, 0) / scores.length,
-          count: scores.length,
-        }))
-        .sort((a, b) => a.tag.localeCompare(b.tag))
-
-      setTagData(tags)
+      setTagData(buildModuleTagSummary(built))
       setLoading(false)
     }
     load()
@@ -165,6 +148,12 @@ export default function DashboardPage() {
     }))
 
   const hazards = summaries.filter(s => s.isHazard)
+  const describeTag = (t: TagScore) => indicatorDesc.get(`${t.subject}::${t.tag}`)
+  const weakestTags = [...tagData].sort((a, b) => a.avgScore - b.avgScore).slice(0, 3)
+  // RiskWarning.weakTags has no subject context (see predictive.ts) — best-effort lookup by
+  // code alone, ignoring subject, since a bare code is still more useful than none at all here.
+  const describeByCode = (code: string) =>
+    Array.from(indicatorDesc.entries()).find(([k]) => k.endsWith(`::${code}`))?.[1]
 
   if (loading) {
     return (
@@ -300,7 +289,7 @@ export default function DashboardPage() {
                   <p className="text-sm font-semibold text-gray-800">{w.student.name}</p>
                   <p className="text-xs text-orange-600">
                     {w.trend === 'declining' ? 'คะแนนลดลงต่อเนื่อง' : 'คะแนนต่ำต่อเนื่อง'}
-                    {w.weakTags.length > 0 && <> · จุดอ่อน: {w.weakTags.join(', ')}</>}
+                    {w.weakTags.length > 0 && <> · จุดอ่อน: {w.weakTags.map(t => describeByCode(t) ?? t).join(', ')}</>}
                   </p>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
@@ -328,6 +317,7 @@ export default function DashboardPage() {
               <TrendingUp size={16} className="text-blue-500" />
               คะแนนเฉลี่ยตามมาตรฐานการเรียนรู้
             </CardTitle>
+            <p className="text-xs text-gray-400">แกนคือรหัสตัวชี้วัด (เช่น &quot;ป.3/1&quot;) แตะดูคำอธิบายได้ ไม่ใช่ชื่อห้องเรียน</p>
           </CardHeader>
           <CardContent className="px-2 pb-4">
             <ResponsiveContainer width="100%" height={260}>
@@ -342,9 +332,30 @@ export default function DashboardPage() {
                   fillOpacity={0.25}
                   strokeWidth={2}
                 />
+                <Tooltip content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null
+                  const t = payload[0].payload as TagScore
+                  return (
+                    <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-2.5 py-1.5 max-w-[200px]">
+                      <p className="text-xs font-bold text-gray-800">{t.tag}</p>
+                      {describeTag(t) && <p className="text-[10px] text-gray-500 leading-snug">{describeTag(t)}</p>}
+                      <p className="text-[10px] text-blue-600 font-semibold mt-0.5">{t.avgScore.toFixed(2)}/2</p>
+                    </div>
+                  )
+                }} />
               </RadarChart>
             </ResponsiveContainer>
             <p className="text-xs text-gray-400 text-center mt-1">คะแนนสูงสุด = 2.0</p>
+            {weakestTags.length > 0 && (
+              <div className="mt-3 space-y-1 border-t border-gray-100 pt-2">
+                <p className="text-xs font-bold text-amber-700">จุดที่ควรเสริม</p>
+                {weakestTags.map(t => (
+                  <p key={`${t.subject}-${t.tag}`} className="text-[11px] text-gray-600">
+                    <span className="font-semibold">{t.tag}</span> ({t.avgScore.toFixed(1)}/2){describeTag(t) ? ` — ${describeTag(t)}` : ''}
+                  </p>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

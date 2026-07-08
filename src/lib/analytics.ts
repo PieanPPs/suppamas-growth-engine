@@ -42,6 +42,37 @@ export function buildStudentTagScores(
     .sort((a, b) => a.tag.localeCompare(b.tag))
 }
 
+export interface ModuleLikeForTags { subject: string; academic_tags: string[] }
+
+/**
+ * Class/school-wide tag radar: average each module's own avgScore into every tag it carries,
+ * weighted by module (not by individual student). Used by teacher/overview and admin/dashboard —
+ * previously duplicated inline in both with a bare-tag bucket key, which silently blended two
+ * different subjects' indicators whenever they reused the same short code (e.g. Math "ป.3/1" and
+ * Thai "ป.3/1"). Bucketed by (subject, tag) here for the same reason as buildStudentTagScores.
+ */
+export function buildModuleTagSummary<T extends ModuleLikeForTags>(
+  items: { module: T; avgScore: number; studentCount: number }[]
+): TagScore[] {
+  const buckets = new Map<string, { subject: string; tag: string; scores: number[] }>()
+  items.forEach(({ module, avgScore, studentCount }) => {
+    if (!studentCount) return
+    module.academic_tags.forEach(tag => {
+      const key = `${module.subject}::${tag}`
+      if (!buckets.has(key)) buckets.set(key, { subject: module.subject, tag, scores: [] })
+      buckets.get(key)!.scores.push(avgScore)
+    })
+  })
+  return Array.from(buckets.values())
+    .map(({ subject, tag, scores }) => ({
+      tag,
+      subject,
+      avgScore: scores.reduce((a, b) => a + b, 0) / scores.length,
+      count: scores.length,
+    }))
+    .sort((a, b) => a.tag.localeCompare(b.tag))
+}
+
 /**
  * Per-subject focus consistency (behavioral radar).
  * Focus mapped to points: Green=2, Yellow=1, Red=0, averaged per subject.
