@@ -48,6 +48,7 @@ export default function StudentDetailPage() {
     () => splitStrengthsWeaknesses(testTagScores),
     [testTagScores]
   )
+  const describe = (t: TagScore) => indicatorDesc.get(`${t.subject}::${t.tag}`)
 
   useEffect(() => {
     async function load() {
@@ -62,7 +63,7 @@ export default function StudentDetailPage() {
         supabase.from('test_items').select('*'),
         supabase.from('test_scores').select('*').eq('student_id', studentId),
         supabase.from('test_item_responses').select('*').eq('student_id', studentId),
-        supabase.from('indicators').select('id, code, description'),
+        supabase.from('indicators').select('id, subject, code, description'),
       ])
 
       setStudent(s)
@@ -86,7 +87,7 @@ export default function StudentDetailPage() {
         (testItemResponses ?? []) as TestItemResponse[],
       ))
       setIndicatorDesc(new Map(
-        ((inds ?? []) as Pick<Indicator, 'code' | 'description'>[]).map(i => [i.code, i.description])
+        ((inds ?? []) as Pick<Indicator, 'subject' | 'code' | 'description'>[]).map(i => [`${i.subject}::${i.code}`, i.description])
       ))
       setFocus(buildFocusBreakdown(list))
       setAvgAcademic(average(list.map(a => a.academic_score)))
@@ -163,8 +164,9 @@ export default function StudentDetailPage() {
               <p className="text-xs font-bold text-green-700 flex items-center gap-1"><TrendingUp size={13} /> จุดแข็ง</p>
               {strengths.length === 0 && <p className="text-xs text-gray-300">—</p>}
               {strengths.map(t => (
-                <div key={t.tag} className="bg-green-50 border border-green-100 rounded-xl px-2.5 py-1.5">
+                <div key={`${t.subject}-${t.tag}`} className="bg-green-50 border border-green-100 rounded-xl px-2.5 py-1.5">
                   <p className="text-xs font-semibold text-green-800 leading-snug">{t.tag}</p>
+                  {describe(t) && <p className="text-[10px] text-green-500 leading-snug line-clamp-2">{describe(t)}</p>}
                   <p className="text-[10px] text-green-600">{t.avgScore.toFixed(1)}/2 · {t.count} ครั้ง</p>
                 </div>
               ))}
@@ -173,8 +175,9 @@ export default function StudentDetailPage() {
               <p className="text-xs font-bold text-red-600 flex items-center gap-1"><TrendingDown size={13} /> ควรเสริม</p>
               {weaknesses.length === 0 && <p className="text-xs text-gray-300">—</p>}
               {weaknesses.map(t => (
-                <div key={t.tag} className="bg-red-50 border border-red-100 rounded-xl px-2.5 py-1.5">
+                <div key={`${t.subject}-${t.tag}`} className="bg-red-50 border border-red-100 rounded-xl px-2.5 py-1.5">
                   <p className="text-xs font-semibold text-red-800 leading-snug">{t.tag}</p>
+                  {describe(t) && <p className="text-[10px] text-red-400 leading-snug line-clamp-2">{describe(t)}</p>}
                   <p className="text-[10px] text-red-500">{t.avgScore.toFixed(1)}/2 · {t.count} ครั้ง</p>
                 </div>
               ))}
@@ -199,9 +202,9 @@ export default function StudentDetailPage() {
               <p className="text-xs font-bold text-green-700 flex items-center gap-1"><TrendingUp size={13} /> จุดแข็ง</p>
               {examStrengths.length === 0 && <p className="text-xs text-gray-300">—</p>}
               {examStrengths.map(t => (
-                <div key={t.tag} className="bg-green-50 border border-green-100 rounded-xl px-2.5 py-1.5">
+                <div key={`${t.subject}-${t.tag}`} className="bg-green-50 border border-green-100 rounded-xl px-2.5 py-1.5">
                   <p className="text-xs font-semibold text-green-800 leading-snug">{t.tag}</p>
-                  {indicatorDesc.get(t.tag) && <p className="text-[10px] text-green-500 leading-snug line-clamp-2">{indicatorDesc.get(t.tag)}</p>}
+                  {describe(t) && <p className="text-[10px] text-green-500 leading-snug line-clamp-2">{describe(t)}</p>}
                   <p className="text-[10px] text-green-600">{t.avgScore.toFixed(1)}/2 · {t.count} ข้อ</p>
                 </div>
               ))}
@@ -210,9 +213,9 @@ export default function StudentDetailPage() {
               <p className="text-xs font-bold text-red-600 flex items-center gap-1"><TrendingDown size={13} /> ควรเสริม</p>
               {examWeaknesses.length === 0 && <p className="text-xs text-gray-300">—</p>}
               {examWeaknesses.map(t => (
-                <div key={t.tag} className="bg-red-50 border border-red-100 rounded-xl px-2.5 py-1.5">
+                <div key={`${t.subject}-${t.tag}`} className="bg-red-50 border border-red-100 rounded-xl px-2.5 py-1.5">
                   <p className="text-xs font-semibold text-red-800 leading-snug">{t.tag}</p>
-                  {indicatorDesc.get(t.tag) && <p className="text-[10px] text-red-400 leading-snug line-clamp-2">{indicatorDesc.get(t.tag)}</p>}
+                  {describe(t) && <p className="text-[10px] text-red-400 leading-snug line-clamp-2">{describe(t)}</p>}
                   <p className="text-[10px] text-red-500">{t.avgScore.toFixed(1)}/2 · {t.count} ข้อ</p>
                 </div>
               ))}

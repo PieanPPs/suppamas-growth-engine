@@ -150,8 +150,12 @@ export default function StudentGroupsPage() {
   )
   const weakList = source === 'tag' ? weakTags : weakIndicators
 
-  const indicatorLabel = (code: string) =>
-    indicators.find(i => i.subject === selectedSubject && i.code === code)?.description
+  // "tag" here is a curriculum indicator short-code (e.g. "ป.3/1") on BOTH sources — it looks
+  // exactly like a classroom name ("ป.3/1" = ห้อง 1), so always resolve the description rather
+  // than showing the bare code alone.
+  const indicatorLabel = (code: string, subject?: string) =>
+    (subject && indicators.find(i => i.subject === subject && i.code === code)?.description)
+    ?? indicators.find(i => i.subject === selectedSubject && i.code === code)?.description
     ?? indicators.find(i => i.code === code)?.description ?? ''
 
   const byTier = (tier: StudentAbility['tier']) => tiers.filter(t => t.tier === tier)
@@ -243,12 +247,12 @@ export default function StudentGroupsPage() {
                 <Gauge size={15} className="text-orange-500" />
                 {source === 'tag' ? 'จุดอ่อนรายมาตรฐาน (จากรายคาบ) — ใครยังไม่ผ่านเรื่องไหน' : 'จุดอ่อนรายตัวชี้วัด (จากผลสอบจริง) — ใครยังไม่ผ่านข้อไหน'}
               </p>
-              {weakList.map(({ tag, weakest }) => (
-                <div key={tag} className="space-y-1">
+              {weakList.map(({ tag, subject, weakest }) => (
+                <div key={`${subject ?? ''}-${tag}`} className="space-y-1">
                   <p className="text-xs font-semibold text-gray-600">
                     {tag}
-                    {source === 'indicator' && indicatorLabel(tag) && (
-                      <span className="text-[10px] font-normal text-gray-400"> — {indicatorLabel(tag)}</span>
+                    {indicatorLabel(tag, subject) && (
+                      <span className="text-[10px] font-normal text-gray-400"> — {indicatorLabel(tag, subject)}</span>
                     )}
                   </p>
                   <div className="flex flex-wrap gap-1.5">

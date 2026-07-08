@@ -1,29 +1,41 @@
 import { CurriculumModule, StudentAssessment, FocusColor, Student, Test, TestItem, TestScore, TestItemResponse } from './types'
 
-export type TagScore = { tag: string; avgScore: number; count: number }
+// `tag` here is almost always a real curriculum indicator short-code (e.g. "ป.3/1"), NOT a
+// free-text skill label — it comes straight from module.academic_tags, which teachers fill in
+// with the official indicator code. That short code is bare and ambiguous on its own (it looks
+// exactly like a classroom name, "ป.3/1" = ห้อง 1 — same "grade/number" format, easy to confuse),
+// so any UI showing `tag` should resolve it against the indicators table and show the description
+// alongside it, not the bare code alone. `subject` is included so callers can disambiguate
+// identical short codes reused across different subjects (Math ป.3/1 and Thai ป.3/1 are different
+// indicators) instead of averaging them together.
+export type TagScore = { tag: string; avgScore: number; count: number; subject?: string }
 
 /**
  * Build per-tag average academic scores for a single student's assessments.
  * Each assessment contributes its academic_score to every tag on its module.
+ * Bucketed by (subject, tag) internally — the same short indicator code can be reused across
+ * different subjects, and averaging those together would blend two unrelated indicators.
  */
 export function buildStudentTagScores(
   assessments: StudentAssessment[],
   moduleMap: Map<string, CurriculumModule>
 ): TagScore[] {
-  const tagBuckets = new Map<string, number[]>()
+  const tagBuckets = new Map<string, { subject: string; tag: string; scores: number[] }>()
 
   for (const a of assessments) {
     const mod = moduleMap.get(a.module_id)
     if (!mod) continue
     for (const tag of mod.academic_tags) {
-      if (!tagBuckets.has(tag)) tagBuckets.set(tag, [])
-      tagBuckets.get(tag)!.push(a.academic_score)
+      const key = `${mod.subject}::${tag}`
+      if (!tagBuckets.has(key)) tagBuckets.set(key, { subject: mod.subject, tag, scores: [] })
+      tagBuckets.get(key)!.scores.push(a.academic_score)
     }
   }
 
-  return Array.from(tagBuckets.entries())
-    .map(([tag, scores]) => ({
+  return Array.from(tagBuckets.values())
+    .map(({ subject, tag, scores }) => ({
       tag,
+      subject,
       avgScore: scores.reduce((s, v) => s + v, 0) / scores.length,
       count: scores.length,
     }))
@@ -110,27 +122,29 @@ export function groupStudentsByAbility(
 }
 
 export interface TagWeakStudent { student: Student; avgScore: number; count: number }
-export interface TagWeakness { tag: string; weakest: TagWeakStudent[] }
+export interface TagWeakness { tag: string; weakest: TagWeakStudent[]; subject?: string }
 
 /** For each academic_tag found on the given modules (e.g. all modules of one subject),
  *  find the students not yet "strong" (avg &lt; 1.5) on that tag, weakest first — capped
- *  so the UI stays a short, actionable list rather than the whole class. */
+ *  so the UI stays a short, actionable list rather than the whole class. Bucketed by
+ *  (subject, tag) — same short indicator code can be reused across different subjects. */
 export function weakStudentsByTag(
   students: Student[],
   assessments: StudentAssessment[],
   modules: CurriculumModule[],
   maxPerTag = 5,
 ): TagWeakness[] {
-  const moduleIdsByTag = new Map<string, Set<string>>()
+  const moduleIdsByKey = new Map<string, { subject: string; tag: string; moduleIds: Set<string> }>()
   modules.forEach(m => {
     m.academic_tags.forEach(tag => {
-      if (!moduleIdsByTag.has(tag)) moduleIdsByTag.set(tag, new Set())
-      moduleIdsByTag.get(tag)!.add(m.id)
+      const key = `${m.subject}::${tag}`
+      if (!moduleIdsByKey.has(key)) moduleIdsByKey.set(key, { subject: m.subject, tag, moduleIds: new Set() })
+      moduleIdsByKey.get(key)!.moduleIds.add(m.id)
     })
   })
 
   const result: TagWeakness[] = []
-  moduleIdsByTag.forEach((moduleIds, tag) => {
+  moduleIdsByKey.forEach(({ subject, tag, moduleIds }) => {
     const byStudent = new Map<string, number[]>()
     assessments.forEach(a => {
       if (!moduleIds.has(a.module_id)) return
@@ -147,7 +161,7 @@ export function weakStudentsByTag(
       .filter((x): x is TagWeakStudent => x !== null)
       .sort((a, b) => a.avgScore - b.avgScore)
       .slice(0, maxPerTag)
-    if (weakest.length > 0) result.push({ tag, weakest })
+    if (weakest.length > 0) result.push({ tag, subject, weakest })
   })
   return result.sort((a, b) => a.tag.localeCompare(b.tag))
 }
@@ -164,8 +178,10 @@ function studentIndicatorBuckets(
   testItems: TestItem[],
   testScores: TestScore[],
   testItemResponses: TestItemResponse[],
-): Map<string, number[]> {
-  const buckets = new Map<string, number[]>()
+): Map<string, { subject: string; code: string; scores: number[] }> {
+  // keyed by (test.subject, indicator_code) — the same short indicator code can be reused
+  // across different subjects (see buildStudentTagScores), same collision risk here.
+  const buckets = new Map<string, { subject: string; code: string; scores: number[] }>()
   for (const test of tests) {
     const graded = testScores.some(sc => sc.test_id === test.id && sc.student_id === studentId)
       || testItemResponses.some(r => r.test_id === test.id && r.student_id === studentId)
@@ -173,8 +189,9 @@ function studentIndicatorBuckets(
     for (const item of testItems) {
       if (item.test_id !== test.id || !item.indicator_code) continue
       const wrong = testItemResponses.some(r => r.test_item_id === item.id && r.student_id === studentId && !r.correct)
-      if (!buckets.has(item.indicator_code)) buckets.set(item.indicator_code, [])
-      buckets.get(item.indicator_code)!.push(wrong ? 0 : 1)
+      const key = `${test.subject}::${item.indicator_code}`
+      if (!buckets.has(key)) buckets.set(key, { subject: test.subject, code: item.indicator_code, scores: [] })
+      buckets.get(key)!.scores.push(wrong ? 0 : 1)
     }
   }
   return buckets
@@ -191,11 +208,12 @@ export function buildStudentIndicatorScores(
   testItemResponses: TestItemResponse[],
 ): TagScore[] {
   const buckets = studentIndicatorBuckets(studentId, tests, testItems, testScores, testItemResponses)
-  return Array.from(buckets.entries())
-    .map(([tag, vals]) => ({
-      tag,
-      avgScore: (vals.reduce((a, b) => a + b, 0) / vals.length) * 2,
-      count: vals.length,
+  return Array.from(buckets.values())
+    .map(({ subject, code, scores }) => ({
+      tag: code,
+      subject,
+      avgScore: (scores.reduce((a, b) => a + b, 0) / scores.length) * 2,
+      count: scores.length,
     }))
     .sort((a, b) => a.tag.localeCompare(b.tag))
 }
@@ -212,7 +230,7 @@ export function groupStudentsByIndicatorAbility(
   return students
     .map(s => {
       const buckets = studentIndicatorBuckets(s.id, tests, testItems, testScores, testItemResponses)
-      const allVals = Array.from(buckets.values()).flat()
+      const allVals = Array.from(buckets.values()).flatMap(b => b.scores)
       if (allVals.length === 0) return null
       const avgScore = (allVals.reduce((a, b) => a + b, 0) / allVals.length) * 2
       return { student: s, avgScore, count: allVals.length, tier: tierOf(avgScore) }
@@ -231,25 +249,25 @@ export function weakStudentsByIndicator(
   testItemResponses: TestItemResponse[],
   maxPerIndicator = 5,
 ): TagWeakness[] {
-  const perStudent = new Map<string, Map<string, number[]>>()
+  const perStudent = new Map<string, Map<string, { subject: string; code: string; scores: number[] }>>()
   students.forEach(s => perStudent.set(s.id, studentIndicatorBuckets(s.id, tests, testItems, testScores, testItemResponses)))
 
-  const codes = new Set<string>()
-  perStudent.forEach(m => m.forEach((_, code) => codes.add(code)))
+  const keys = new Map<string, { subject: string; code: string }>()
+  perStudent.forEach(m => m.forEach((b, key) => keys.set(key, { subject: b.subject, code: b.code })))
 
   const result: TagWeakness[] = []
-  codes.forEach(code => {
+  keys.forEach(({ subject, code }, key) => {
     const weakest = students
       .map((s): TagWeakStudent | null => {
-        const vals = perStudent.get(s.id)?.get(code)
-        if (!vals || vals.length === 0) return null
-        const avgScore = (vals.reduce((a, b) => a + b, 0) / vals.length) * 2
-        return avgScore < 1.5 ? { student: s, avgScore, count: vals.length } : null
+        const bucket = perStudent.get(s.id)?.get(key)
+        if (!bucket || bucket.scores.length === 0) return null
+        const avgScore = (bucket.scores.reduce((a, b) => a + b, 0) / bucket.scores.length) * 2
+        return avgScore < 1.5 ? { student: s, avgScore, count: bucket.scores.length } : null
       })
       .filter((x): x is TagWeakStudent => x !== null)
       .sort((a, b) => a.avgScore - b.avgScore)
       .slice(0, maxPerIndicator)
-    if (weakest.length > 0) result.push({ tag: code, weakest })
+    if (weakest.length > 0) result.push({ tag: code, subject, weakest })
   })
   return result.sort((a, b) => a.tag.localeCompare(b.tag))
 }

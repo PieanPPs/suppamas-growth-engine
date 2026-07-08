@@ -3,16 +3,23 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Student, StudentAssessment, CurriculumModule, HomeworkSubmission, HomeworkTask, HomeworkStatus } from '@/lib/types'
+import { Student, StudentAssessment, CurriculumModule, HomeworkSubmission, HomeworkTask, HomeworkStatus, Course, Indicator } from '@/lib/types'
 import { StudentRadar } from '@/components/student-radar'
 import {
   buildStudentTagScores, buildFocusBreakdown, average, happinessMessage,
-  TagScore, FocusBreakdown,
+  splitStrengthsWeaknesses, TagScore, FocusBreakdown,
 } from '@/lib/analytics'
 import { latestAssessmentPerPlan } from '@/lib/db'
-import { Loader2, Star, Heart, ClipboardList, CheckCircle2, Clock, XCircle, CircleDashed } from 'lucide-react'
+import { Loader2, Star, Heart, ClipboardList, CheckCircle2, Clock, XCircle, CircleDashed, Sparkles } from 'lucide-react'
 
 type QuestItem = { title: string; status: HomeworkStatus | null }
+
+/** Classroom names and curriculum indicator short-codes use the exact same "ชั้น/เลข" format
+ *  (ห้อง "ป.3/1" vs ตัวชี้วัด "ป.3/1") — extracting just the grade prefix here, e.g. "ป.3/1" → "ป.3". */
+function gradeFromClassName(className: string): string | null {
+  const m = className.match(/^((?:ป|ม)\.\d+)/)
+  return m?.[1] ?? null
+}
 
 export default function HappinessReportPage() {
   const params = useParams()
@@ -21,6 +28,7 @@ export default function HappinessReportPage() {
 
   const [student, setStudent] = useState<Student | null>(null)
   const [tagScores, setTagScores] = useState<TagScore[]>([])
+  const [indicatorDesc, setIndicatorDesc] = useState<Map<string, string>>(new Map())
   const [focus, setFocus] = useState<FocusBreakdown>({ green: 0, yellow: 0, red: 0, total: 0 })
   const [avgAcademic, setAvgAcademic] = useState(0)
   const [avgSoft, setAvgSoft] = useState(0)
@@ -31,12 +39,14 @@ export default function HappinessReportPage() {
 
   useEffect(() => {
     async function load() {
-      const [{ data: s }, { data: modules }, { data: assessments }, { data: hw }, { data: tasks }] = await Promise.all([
+      const [{ data: s }, { data: modules }, { data: assessments }, { data: hw }, { data: tasks }, { data: crs }, { data: inds }] = await Promise.all([
         supabase.from('students').select('*').eq('id', studentId).single(),
         supabase.from('curriculum_modules').select('*'),
         supabase.from('student_assessments').select('*').eq('student_id', studentId),
         supabase.from('homework_submissions').select('*').eq('student_id', studentId),
-        supabase.from('homework_tasks').select('*'),
+        supabase.from('homework_tasks').select('*').order('created_at', { ascending: false }),
+        supabase.from('courses').select('subject_key, grade'),
+        supabase.from('indicators').select('subject, code, description'),
       ])
 
       if (!s) { setNotFound(true); setLoading(false); return }
@@ -47,6 +57,9 @@ export default function HappinessReportPage() {
       const hwList = (hw ?? []) as HomeworkSubmission[]
 
       setTagScores(buildStudentTagScores(list, moduleMap))
+      setIndicatorDesc(new Map(
+        ((inds ?? []) as Pick<Indicator, 'subject' | 'code' | 'description'>[]).map(i => [`${i.subject}::${i.code}`, i.description])
+      ))
       setFocus(buildFocusBreakdown(list))
       setAvgAcademic(average(list.map(a => a.academic_score)))
       setAvgSoft(average(list.map(a => a.soft_skill_score)))
@@ -56,10 +69,24 @@ export default function HappinessReportPage() {
         missing: hwList.filter(h => h.status === 'Missing').length,
       })
 
-      // Digital Quest Board: tasks (latest 4) + this child's status
+      // Digital Quest Board: only tasks from subjects taught at this child's own grade —
+      // homework_tasks has no grade/subject column of its own, so scope via module → subject →
+      // course.grade. Without this, tasks from every grade in the school could show up here.
+      const studentGrade = gradeFromClassName(s.class_name)
+      const gradeSubjects = new Set(
+        ((crs ?? []) as Pick<Course, 'subject_key' | 'grade'>[])
+          .filter(c => c.grade === studentGrade)
+          .map(c => c.subject_key)
+      )
+      const relevantModuleIds = new Set(
+        (modules ?? [])
+          .filter((m: CurriculumModule) => !studentGrade || gradeSubjects.has(m.subject))
+          .map((m: CurriculumModule) => m.id)
+      )
       const statusByModule = new Map<string, HomeworkStatus>(hwList.map(h => [h.module_id, h.status]))
       const questList: QuestItem[] = ((tasks ?? []) as HomeworkTask[])
-        .slice(-4)
+        .filter(t => relevantModuleIds.has(t.module_id))
+        .slice(0, 4)
         .map(t => ({ title: t.title, status: statusByModule.get(t.module_id) ?? null }))
       setQuests(questList)
 
@@ -67,6 +94,9 @@ export default function HappinessReportPage() {
     }
     load()
   }, [studentId])
+
+  const { strengths } = splitStrengthsWeaknesses(tagScores, 2)
+  const describe = (t: TagScore) => indicatorDesc.get(`${t.subject}::${t.tag}`)
 
   if (loading) {
     return (
@@ -122,12 +152,24 @@ export default function HappinessReportPage() {
         </div>
       </div>
 
-      {/* Radar — strengths */}
+      {/* Radar — strengths. Axis labels are indicator short-codes (e.g. "ป.3/1"), which look
+          exactly like a classroom name — so a plain-language description list goes underneath,
+          not just the raw code, to avoid parents reading them as ห้องเรียน. */}
       <div className="bg-white border border-gray-200 rounded-2xl px-3 py-4 shadow-sm">
         <h2 className="text-sm font-bold text-gray-800 text-center mb-2">
           จุดเด่นในการเรียนรู้ของลูก
         </h2>
         <StudentRadar data={tagScores} color="#22c55e" />
+        {strengths.length > 0 && (
+          <div className="px-2 pt-1 space-y-1.5">
+            {strengths.map(t => (
+              <div key={`${t.subject}-${t.tag}`} className="flex items-start gap-1.5 text-xs text-green-700 bg-green-50 rounded-lg px-2.5 py-1.5">
+                <Sparkles size={12} className="mt-0.5 flex-shrink-0" />
+                <span>{describe(t) ?? t.tag}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Focus */}
