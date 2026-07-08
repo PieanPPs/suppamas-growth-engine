@@ -164,11 +164,12 @@ export default function TestsPage() {
   async function createTest() {
     if (!draft.title.trim() || !draft.subject || !Number(draft.maxScore)) return
     setSaving(true)
-    const { data } = await supabase.from('tests').insert({
+    const { data, error } = await supabase.from('tests').insert({
       school_id: schoolId,
       title: draft.title.trim(), subject: draft.subject, type: draft.type,
       max_score: Number(draft.maxScore), test_date: draft.date,
     }).select().single()
+    if (error) { setSaving(false); alert(`สร้างแบบทดสอบไม่สำเร็จ: ${error.message}`); return }
     if (data && draftIndicators.size > 0) {
       await supabase.from('test_indicators').insert(
         Array.from(draftIndicators).map(indicator_id => ({ test_id: data.id, indicator_id }))
