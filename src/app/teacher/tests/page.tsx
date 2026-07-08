@@ -65,6 +65,7 @@ export default function TestsPage() {
 
   // score entry
   const [activeTest, setActiveTest] = useState<Test | null>(null)
+  const [editingType, setEditingType] = useState(false)
   const [scoreInputs, setScoreInputs] = useState<Record<string, string>>({})
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null)
   const [pasteOpen, setPasteOpen] = useState(false)
@@ -140,11 +141,24 @@ export default function TestsPage() {
     const init: Record<string, string> = {}
     visibleStudents.forEach(s => { init[s.id] = existing.has(s.id) ? String(existing.get(s.id)) : '' })
     setScoreInputs(init)
+    setEditingType(false)
   }, [activeTest?.id, visibleStudents.map(s => s.id).join(',')])
 
   function selectTeacher(id: string) {
     setTeacherId(id)
     localStorage.setItem(TEACHER_KEY, id)
+  }
+
+  // Test type is only picked once in the create form (defaults to "สอบเก็บคะแนน" if the
+  // dropdown is left untouched) and had no way to fix afterward — teachers who forgot to
+  // change it were stuck with the wrong label everywhere, including on the printed paper.
+  async function updateTestType(newType: TestType) {
+    if (!activeTest) return
+    const { error } = await supabase.from('tests').update({ type: newType }).eq('id', activeTest.id)
+    if (error) { alert(`แก้ไขประเภทไม่สำเร็จ: ${error.message}`); return }
+    setTests(ts => ts.map(t => t.id === activeTest.id ? { ...t, type: newType } : t))
+    setActiveTest(t => t ? { ...t, type: newType } : t)
+    setEditingType(false)
   }
 
   async function createTest() {
@@ -302,9 +316,26 @@ export default function TestsPage() {
 
         <div className="bg-white border border-gray-200 rounded-2xl px-4 py-3">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${TEST_TYPES[activeTest.type].cls}`}>
-              {TEST_TYPES[activeTest.type].label}
-            </span>
+            {editingType ? (
+              <select
+                autoFocus
+                value={activeTest.type}
+                onChange={e => updateTestType(e.target.value as TestType)}
+                onBlur={() => setEditingType(false)}
+                className="text-[11px] font-semibold border border-gray-300 rounded-full px-2 py-0.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
+              >
+                {(Object.entries(TEST_TYPES) as [TestType, typeof TEST_TYPES[TestType]][]).map(([k, v]) => (
+                  <option key={k} value={k}>{v.label}</option>
+                ))}
+              </select>
+            ) : (
+              <button onClick={() => setEditingType(true)}
+                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full hover:opacity-75 ${TEST_TYPES[activeTest.type].cls}`}
+                title="แตะเพื่อแก้ไขประเภทแบบทดสอบ"
+              >
+                {TEST_TYPES[activeTest.type].label} ✎
+              </button>
+            )}
             <span className="text-xs text-gray-400">{courseName(activeTest.subject)} · เต็ม {activeTest.max_score}</span>
           </div>
           <h2 className="text-base font-bold text-gray-900 mt-1">{activeTest.title}</h2>
