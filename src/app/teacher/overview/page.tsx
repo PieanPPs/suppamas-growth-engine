@@ -4,15 +4,21 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
-import { CurriculumModule, PacingLog, StudentAssessment, Student, Indicator } from '@/lib/types'
+import {
+  CurriculumModule, PacingLog, StudentAssessment, Student, Indicator,
+  Test, TestItem, TestScore, TestItemResponse,
+} from '@/lib/types'
 import { computeAtRiskStudents, RiskWarning } from '@/lib/predictive'
-import { buildModuleTagSummary, TagScore } from '@/lib/analytics'
+import { buildModuleTagSummary, buildTestIndicatorStats, TagScore, TestIndicatorStat } from '@/lib/analytics'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, Tooltip, Cell,
 } from 'recharts'
-import { AlertTriangle, BookOpen, Users, TrendingUp, Loader2, TrendingDown } from 'lucide-react'
+import {
+  AlertTriangle, BookOpen, Users, TrendingUp, Loader2, TrendingDown,
+  ClipboardCheck, CheckCircle2, CircleDashed, CalendarDays,
+} from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
 import { fetchAllPaged, getTermStartISO, latestAssessmentPerPlan } from '@/lib/db'
@@ -32,12 +38,30 @@ type ModuleSummary = {
   isHazard: boolean
 }
 
+// สถานะการประเมินรายแผนการสอน (รายชั่วโมง) — ประเมินไปแล้วกี่คน เฉลี่ยเท่าไร หรือยังไม่ประเมินเลย
+type PlanRow = { id: string; plan_number: number; topic: string; count: number; avg: number | null }
+
+// สรุปแบบทดสอบ 1 ฉบับ: คะแนนรวมเฉลี่ย + อัตราผ่านรายตัวชี้วัดจากผลตรวจรายข้อ
+type TestSummaryRow = { test: Test; gradedCount: number; avgPct: number | null; stats: TestIndicatorStat[] }
+
+const TEST_TYPE_LABEL: Record<string, string> = {
+  quiz: 'สอบเก็บคะแนน', formative: 'แบบทดสอบระหว่างเรียน', midterm: 'กลางภาค', final: 'ปลายภาค', mock_nt: 'Pre-NT',
+}
+
+function pctCls(pct: number): string {
+  if (pct >= 75) return 'bg-green-100 text-green-700'
+  if (pct >= 50) return 'bg-amber-100 text-amber-700'
+  return 'bg-red-100 text-red-600'
+}
+
 export default function TeacherOverviewPage() {
   const supabase = createClient()
   const schoolId = getSchoolId()
   const [summaries, setSummaries] = useState<ModuleSummary[]>([])
   const [tagData, setTagData] = useState<TagScore[]>([])
   const [indicatorDesc, setIndicatorDesc] = useState<Map<string, string>>(new Map())
+  const [plansByModule, setPlansByModule] = useState<Map<string, PlanRow[]>>(new Map())
+  const [testSummaries, setTestSummaries] = useState<TestSummaryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [totalStudents, setTotalStudents] = useState(0)
   const [grades, setGrades] = useState<string[]>([])
@@ -66,7 +90,10 @@ export default function TeacherOverviewPage() {
 
       const termStart = await getTermStartISO(supabase, schoolId)
 
-      const [{ data: modules }, pacings, assessments, { data: students }, { data: inds }] =
+      const [
+        { data: modules }, pacings, assessments, { data: students }, { data: inds },
+        { data: plans }, { data: tst }, testItems, testScores, testItemResponses,
+      ] =
         await Promise.all([
           supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
           // NOT term-scoped: pacing status is cumulative per module (latest-wins below).
@@ -79,6 +106,11 @@ export default function TeacherOverviewPage() {
           }),
           supabase.from('students').select('*').eq('school_id', schoolId),
           supabase.from('indicators').select('subject, code, description'),
+          supabase.from('lesson_plans').select('id, module_id, plan_number, topic').eq('school_id', schoolId).order('plan_number'),
+          supabase.from('tests').select('*').eq('school_id', schoolId).order('test_date', { ascending: false }),
+          fetchAllPaged<TestItem>(() => supabase.from('test_items').select('*').order('test_id').order('item_no')),
+          fetchAllPaged<TestScore>(() => supabase.from('test_scores').select('*').eq('school_id', schoolId).order('id')),
+          fetchAllPaged<TestItemResponse>(() => supabase.from('test_item_responses').select('*').eq('school_id', schoolId).order('id')),
         ])
       setIndicatorDesc(new Map(
         ((inds ?? []) as Pick<Indicator, 'subject' | 'code' | 'description'>[]).map(i => [`${i.subject}::${i.code}`, i.description])
@@ -126,6 +158,41 @@ export default function TeacherOverviewPage() {
       setSummaries(built)
 
       setTagData(buildModuleTagSummary(built))
+
+      // สถานะประเมินรายแผนการสอน — dedupedAssessments เป็น 1 แถวต่อ (นักเรียน, หน่วย, แผน)
+      // อยู่แล้ว ดังนั้นจำนวนแถวต่อแผน = จำนวนนักเรียนที่ถูกประเมินในแผนนั้น
+      const visibleModuleIds = new Set(visibleModules.map(m => m.id))
+      const statByPlan = new Map<string, { count: number; sum: number }>()
+      dedupedAssessments.forEach(a => {
+        if (!a.lesson_plan_id) return
+        const s = statByPlan.get(a.lesson_plan_id) ?? { count: 0, sum: 0 }
+        s.count++
+        s.sum += a.academic_score
+        statByPlan.set(a.lesson_plan_id, s)
+      })
+      const planMap = new Map<string, PlanRow[]>()
+      ;(plans ?? []).forEach((p: { id: string; module_id: string | null; plan_number: number; topic: string }) => {
+        if (!p.module_id || !visibleModuleIds.has(p.module_id)) return
+        const st = statByPlan.get(p.id)
+        if (!planMap.has(p.module_id)) planMap.set(p.module_id, [])
+        planMap.get(p.module_id)!.push({
+          id: p.id, plan_number: p.plan_number, topic: p.topic,
+          count: st?.count ?? 0,
+          avg: st ? st.sum / st.count : null,
+        })
+      })
+      setPlansByModule(planMap)
+
+      // สรุปแบบทดสอบ (เฉพาะวิชาของครู): คะแนนรวมเฉลี่ย + อัตราผ่านรายตัวชี้วัดจากผลตรวจรายข้อ
+      const visibleTests = subjectSet ? (tst ?? []).filter((t: Test) => subjectSet.has(t.subject)) : (tst ?? [])
+      setTestSummaries(visibleTests.map((test: Test) => {
+        const scores = testScores.filter(s => s.test_id === test.id)
+        const avgPct = scores.length && test.max_score > 0
+          ? Math.round(scores.reduce((a, b) => a + b.score, 0) / scores.length / test.max_score * 100)
+          : null
+        const stats = buildTestIndicatorStats(test.id, testItems, testScores, testItemResponses)
+        return { test, gradedCount: Math.max(scores.length, stats[0]?.gradedCount ?? 0), avgPct, stats }
+      }))
 
       setLoading(false)
     }
@@ -284,11 +351,12 @@ export default function TeacherOverviewPage() {
         </Card>
       )}
 
-      {/* Bar chart */}
+      {/* Bar chart + per-lesson-plan assessment status */}
       {barData.length > 0 && (
         <Card className="border border-gray-200">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold text-gray-800">คะแนนเฉลี่ยแต่ละบทเรียน</CardTitle>
+            <p className="text-xs text-gray-400">กราฟรายหน่วย · ด้านล่างแยกรายแผนการสอน (รายชั่วโมง) ว่าประเมินไปแล้วหรือยัง</p>
           </CardHeader>
           <CardContent className="px-2 pb-4">
             <ResponsiveContainer width="100%" height={200}>
@@ -303,6 +371,99 @@ export default function TeacherOverviewPage() {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+
+            {/* รายแผนการสอน — เห็นทันทีว่าชั่วโมงไหนประเมินแล้ว/ยังไม่ประเมิน */}
+            {plansByModule.size > 0 && (
+              <div className="px-2 mt-2 space-y-3">
+                {summaries.filter(s => plansByModule.has(s.module.id)).map(s => (
+                  <div key={s.module.id}>
+                    <p className="text-xs font-bold text-gray-500 mb-1">
+                      <span className="font-mono text-gray-400">{s.module.module_code}</span> {s.module.title}
+                    </p>
+                    <div className="space-y-1">
+                      {plansByModule.get(s.module.id)!.map(p => (
+                        <Link key={p.id} href={`/teacher/lesson-plans/${p.id}`}
+                          className="flex items-center justify-between gap-2 bg-gray-50 hover:bg-gray-100 rounded-lg px-2.5 py-1.5">
+                          <span className="text-xs text-gray-700 truncate">
+                            <span className="text-gray-400">แผนที่ {p.plan_number}</span> {p.topic}
+                          </span>
+                          {p.count > 0 ? (
+                            <span className={`flex items-center gap-1 text-[11px] font-semibold flex-shrink-0 ${
+                              (p.avg ?? 0) >= 1.5 ? 'text-green-600' : (p.avg ?? 0) >= 1.0 ? 'text-amber-600' : 'text-red-500'
+                            }`}>
+                              <CheckCircle2 size={12} /> เฉลี่ย {(p.avg ?? 0).toFixed(1)} · {p.count} คน
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-[11px] text-gray-400 flex-shrink-0">
+                              <CircleDashed size={12} /> ยังไม่ประเมิน
+                            </span>
+                          )}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* สรุปแบบทดสอบรายตัวชี้วัด — เห็นเลยว่าฉบับไหนตัวชี้วัดไหนผ่าน/ไม่ผ่าน */}
+      {testSummaries.length > 0 && (
+        <Card className="border border-gray-200">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+              <ClipboardCheck size={16} className="text-emerald-600" /> สรุปแบบทดสอบรายตัวชี้วัด
+            </CardTitle>
+            <p className="text-xs text-gray-400">จากผลตรวจรายข้อ · เรียงตัวชี้วัดที่อ่อนสุดขึ้นก่อน เพื่อนำไปทำชุดฝึก/แผนซ่อมเสริมต่อ</p>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 space-y-3">
+            {testSummaries.map(({ test, gradedCount, avgPct, stats }) => (
+              <div key={test.id} className="border border-gray-100 rounded-xl px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-semibold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">
+                        {TEST_TYPE_LABEL[test.type] ?? test.type}
+                      </span>
+                      <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
+                        <CalendarDays size={10} /> {test.test_date}
+                      </span>
+                    </div>
+                    <p className="text-sm font-semibold text-gray-800 truncate mt-0.5">{test.title}</p>
+                  </div>
+                  {avgPct != null ? (
+                    <span className={`text-xs font-bold px-2 py-1 rounded-lg flex-shrink-0 ${pctCls(avgPct)}`}>
+                      เฉลี่ย {avgPct}%
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-gray-400 flex-shrink-0">ยังไม่กรอกคะแนน</span>
+                  )}
+                </div>
+                {stats.length > 0 ? (
+                  <div className="mt-2 space-y-1">
+                    {stats.map(st => (
+                      <div key={st.code} className="flex items-start gap-2">
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${pctCls(st.pct)}`}>
+                          {st.code} · {st.pct}%
+                        </span>
+                        <span className="text-[11px] text-gray-500 leading-snug">
+                          {indicatorDesc.get(`${test.subject}::${st.code}`) ?? ''}
+                          <span className="text-gray-300"> ({st.itemCount} ข้อ · ตรวจแล้ว {st.gradedCount} คน)</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : gradedCount > 0 ? (
+                  <p className="text-[11px] text-gray-400 mt-1.5">ยังไม่ได้ตรวจรายข้อ — เห็นเฉพาะคะแนนรวม (ตรวจรายข้อในหน้าแบบทดสอบเพื่อดูรายตัวชี้วัด)</p>
+                ) : null}
+              </div>
+            ))}
+            <Link href="/teacher/nt-cycle"
+              className="block text-center text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl py-2.5 hover:bg-emerald-100">
+              📈 วิเคราะห์จุดอ่อน + ชุดฝึกเฉพาะจุด + กราฟข้ามรอบ (วงจรติว NT) →
+            </Link>
           </CardContent>
         </Card>
       )}

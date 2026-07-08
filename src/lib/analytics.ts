@@ -303,6 +303,54 @@ export function weakStudentsByIndicator(
   return result.sort((a, b) => a.tag.localeCompare(b.tag))
 }
 
+export interface TestIndicatorStat { code: string; pct: number; itemCount: number; gradedCount: number }
+
+/**
+ * Class-wide per-indicator correct rate for ONE test, from item-level grading.
+ * Same tap-equals-wrong convention as everywhere else: a graded student with no
+ * response row on an item counts as having answered it correctly. A student counts
+ * as "graded" if they have a total score row OR any item response for this test.
+ * Sorted weakest-first — the teacher's next action is always about the lowest ones.
+ */
+export function buildTestIndicatorStats(
+  testId: string,
+  testItems: TestItem[],
+  testScores: TestScore[],
+  testItemResponses: TestItemResponse[],
+): TestIndicatorStat[] {
+  const items = testItems.filter(i => i.test_id === testId && i.indicator_code)
+  if (items.length === 0) return []
+  const graded = new Set<string>([
+    ...testScores.filter(s => s.test_id === testId).map(s => s.student_id),
+    ...testItemResponses.filter(r => r.test_id === testId).map(r => r.student_id),
+  ])
+  if (graded.size === 0) return []
+  const wrong = new Set(
+    testItemResponses
+      .filter(r => r.test_id === testId && !r.correct)
+      .map(r => `${r.test_item_id}::${r.student_id}`)
+  )
+  const byCode = new Map<string, { correct: number; total: number; itemIds: Set<string> }>()
+  items.forEach(item => {
+    const code = item.indicator_code as string
+    if (!byCode.has(code)) byCode.set(code, { correct: 0, total: 0, itemIds: new Set() })
+    const b = byCode.get(code)!
+    b.itemIds.add(item.id)
+    graded.forEach(sid => {
+      b.total++
+      if (!wrong.has(`${item.id}::${sid}`)) b.correct++
+    })
+  })
+  return Array.from(byCode.entries())
+    .map(([code, b]) => ({
+      code,
+      pct: Math.round((b.correct / b.total) * 100),
+      itemCount: b.itemIds.size,
+      gradedCount: graded.size,
+    }))
+    .sort((a, b) => a.pct - b.pct)
+}
+
 export interface MonthlyTrendPoint { month: string; avgScore: number; count: number }
 
 /** Bucket a student's academic_score by month (from created_at) so a UI can plot progress
