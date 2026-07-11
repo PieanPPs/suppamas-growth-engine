@@ -20,6 +20,12 @@ export const EXAM_STYLES: { key: string; label: string; text: string }[] = [
   { key: 'data', label: 'โจทย์อ่านตาราง/ข้อมูล', text: 'มีโจทย์ที่ให้อ่านค่าจากตารางหรือชุดข้อมูลสั้น ๆ (เขียนตารางเป็นข้อความในตัวโจทย์ได้) อย่างน้อย 2-3 ข้อ เพื่อฝึกการอ่านข้อมูล' },
 ]
 
+// กติกาเขียนคณิตศาสตร์เป็นข้อความธรรมดา — ใส่ในพรอมต์ทุกตัวที่อาจมีเนื้อหาคณิต/วิทย์
+// เพราะครูคัดลอกผลลัพธ์กลับมาวางในระบบซึ่งแสดงผลเป็นข้อความล้วน ไม่ render LaTeX:
+// สูตรที่สวยงามใน ChatGPT จะกลายเป็นโค้ดดิบอ่านไม่ออก เช่น \frac{3}{4}
+export const MATH_PLAIN_TEXT_RULE =
+  '- **ห้ามใช้โค้ด LaTeX หรือสูตรคณิตแบบ Markdown ทุกชนิด** (ห้ามมี \\frac, \\times, $...$, \\(...\\) ฯลฯ) เพราะระบบปลายทางแสดงผลเป็นข้อความล้วน ให้เขียนคณิตศาสตร์เป็นข้อความธรรมดาเท่านั้น: เศษส่วนใช้เครื่องหมายทับ เช่น 3/4, จำนวนคละเขียน 1 1/2, คูณใช้ ×, หารใช้ ÷, ยกกำลังใช้ ^ เช่น 2^3, รากที่สองใช้ √ เช่น √16'
+
 export interface ExamPromptOptions {
   subjectName: string
   grade?: string | null
@@ -103,6 +109,7 @@ ${indicatorLines}
 ${styleBlock}
 ข้อกำหนดสำคัญ:
 - ภาษาเหมาะกับวัยผู้เรียน โจทย์ชัดเจน ตัวลวงสมเหตุสมผล
+${MATH_PLAIN_TEXT_RULE}
 ${cfg.rules}
 - ตอบกลับในรูปแบบด้านล่างนี้เท่านั้น ห้ามมีข้อความอื่นนำหน้าหรือต่อท้าย
 - **บังคับ**: หลังเฉลยของทุกข้อ ต้องมีบรรทัด --- คั่นเสมอ ไม่มีข้อยกเว้น
@@ -140,11 +147,51 @@ function normalizeAnswer(raw: string): string {
   return m ? m[1] : raw.trim()
 }
 
+/**
+ * แปลงโค้ดคณิตศาสตร์ LaTeX/Markdown ที่เว็บ AI ชอบแถมมา ให้เป็นข้อความธรรมดาอ่านออก
+ * — พรอมต์สั่งห้ามใช้ LaTeX แล้ว (MATH_PLAIN_TEXT_RULE) แต่ AI มักเผลอใส่มาอยู่ดี
+ * โดยเฉพาะโจทย์เศษส่วน จึงต้องดักแปลงฝั่งรับด้วยเสมอ
+ */
+export function latexToPlainText(text: string): string {
+  let s = text
+  const wrap = (v: string) => /^[\w๐-๙.,]+$/.test(v.trim()) ? v.trim() : `(${v.trim()})`
+  // เศษส่วน \frac{a}{b} → a/b — วนซ้ำเพื่อรองรับเศษส่วนซ้อน (regex จับเฉพาะเนื้อในที่ไม่มีปีกกา
+  // ดังนั้นตัวในสุดถูกแปลงก่อน แล้วรอบถัดไปตัวนอกจึงจับได้)
+  const frac = /\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g
+  let prev = ''
+  while (prev !== s) { prev = s; s = s.replace(frac, (_, a, b) => `${wrap(a)}/${wrap(b)}`) }
+  // รากที่สอง / รากที่ n
+  s = s.replace(/\\sqrt\s*\[([^\]]*)\]\s*\{([^{}]*)\}/g, (_, n, v) => `${n}√(${String(v).trim()})`)
+  s = s.replace(/\\sqrt\s*\{([^{}]*)\}/g, (_, v) => `√(${String(v).trim()})`)
+  // \text{...} และตระกูล mathrm — เอาเฉพาะเนื้อใน
+  prev = ''
+  while (prev !== s) { prev = s; s = s.replace(/\\(?:text|mathrm|mathbf|mathit|operatorname)\s*\{([^{}]*)\}/g, '$1') }
+  // สัญลักษณ์ที่พบบ่อย
+  const symbols: [RegExp, string][] = [
+    [/\\times\b/g, '×'], [/\\div\b/g, '÷'], [/\\cdot\b/g, '·'], [/\\pm\b/g, '±'],
+    [/\\leq?\b/g, '≤'], [/\\geq?\b/g, '≥'], [/\\neq?\b/g, '≠'], [/\\approx\b/g, '≈'],
+    [/\\pi\b/g, 'π'], [/\\theta\b/g, 'θ'], [/\\alpha\b/g, 'α'], [/\\beta\b/g, 'β'],
+    [/\\infty\b/g, '∞'], [/\\degree\b/g, '°'], [/\^\{?\\circ\}?/g, '°'], [/\\%/g, '%'],
+    [/\\left\b/g, ''], [/\\right\b/g, ''],
+    [/\\[,;:!]/g, ' '], [/\\quad\b/g, ' '], [/\\qquad\b/g, ' '],
+  ]
+  symbols.forEach(([re, to]) => { s = s.replace(re, to) })
+  // ยกกำลัง/ตัวห้อยที่ครอบปีกกา: x^{12} → x^12, a_{1} → a_1
+  s = s.replace(/([\^_])\{([^{}]*)\}/g, '$1$2')
+  // ตัวคั่นสูตร — คงเนื้อในไว้: $$...$$, $...$, \(...\), \[...\]
+  s = s.replace(/\$\$([\s\S]*?)\$\$/g, '$1')
+  s = s.replace(/\$([^$\n]*)\$/g, '$1')
+  s = s.replace(/\\[()[\]]/g, '')
+  // ตัวหนา Markdown (**ข้อ: 1**) ทำให้บรรทัดไม่เข้า pattern ของ label — ลอกออก
+  s = s.replace(/\*\*/g, '')
+  return s
+}
+
 /** แตกข้อความที่วางกลับจากเว็บ AI (หรือข้อสอบเก่าที่จัดรูปแบบเดียวกัน) เป็นรายข้อ */
 export function parseExamText(text: string): { items: ParsedExamItem[]; warnings: string[] } {
   const warnings: string[] = []
   // Strip markdown heading markers (## ### etc.) that Gemini/Claude prepend to lines
-  const cleaned = text.replace(/\r/g, '').replace(/^#{1,6}\s+/gm, '')
+  const cleaned = latexToPlainText(text.replace(/\r/g, '')).replace(/^#{1,6}\s+/gm, '')
   let blocks = cleaned.split(/^\s*-{3,}\s*$/m).map(b => b.trim()).filter(Boolean)
   // Fallback: no --- found → split by "ข้อ: N" line starts so AI output without separators still parses
   if (blocks.length <= 1) {

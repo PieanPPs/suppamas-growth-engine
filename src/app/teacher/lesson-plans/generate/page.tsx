@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { CurriculumModule, Course, Indicator, LessonPlan } from '@/lib/types'
+import { MATH_PLAIN_TEXT_RULE, latexToPlainText } from '@/lib/exam-import'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
 import {
@@ -12,7 +13,9 @@ import {
 import Link from 'next/link'
 
 // ======= Parser =======
-function parseAIOutput(text: string): Partial<LessonPlan> {
+function parseAIOutput(rawText: string): Partial<LessonPlan> {
+  // ดักแปลง LaTeX ที่ AI เผลอใส่มา (โดยเฉพาะแผนคณิตที่มีเศษส่วน) ให้เป็นข้อความอ่านออก
+  const text = latexToPlainText(rawText)
   const extract = (key: string) => {
     const re = new RegExp(`===\\s*${key}\\s*===([\\s\\S]*?)(?====|$)`)
     return re.exec(text)?.[1]?.trim() ?? ''
@@ -137,6 +140,7 @@ function buildPrompt(opts: {
 ${indList}
 ${extraBlock}
 **กฎสำคัญ: ตอบเฉพาะรูปแบบที่กำหนดด้านล่าง ห้ามเพิ่มคำอธิบายนอกรูปแบบ**
+${MATH_PLAIN_TEXT_RULE}
 
 ตอบตามรูปแบบนี้ทุกหัวข้อ โดยใช้ ===หัวข้อ=== เป็นตัวแบ่งเท่านั้น:
 
