@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
-import { CurriculumModule, PacingLog, StudentAssessment, Student, Indicator } from '@/lib/types'
-import { computeAtRiskStudents, RiskWarning } from '@/lib/predictive'
+import { CurriculumModule, PacingLog, StudentAssessment, Student, Indicator, Course } from '@/lib/types'
+import { computeAtRiskStudents } from '@/lib/predictive'
 import { buildModuleTagSummary, TagScore } from '@/lib/analytics'
 import { fetchAllPaged, getTermStartISO, latestAssessmentPerPlan } from '@/lib/db'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,6 +16,7 @@ import {
 } from 'recharts'
 import { AlertTriangle, BookOpen, Users, TrendingUp, Loader2, Gauge, TrendingDown, Trophy, Wrench, Flag } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
+import { RoomFilter } from '@/components/room-filter'
 
 type ModuleSummary = {
   module: CurriculumModule
@@ -31,14 +32,19 @@ type ModuleSummary = {
 export default function DashboardPage() {
   const supabase = createClient()
   const schoolId = getSchoolId()
-  const [summaries, setSummaries] = useState<ModuleSummary[]>([])
-  const [tagData, setTagData] = useState<TagScore[]>([])
+  // raw data — everything below derives from these via useMemo, so the room/subject
+  // filters recompute the whole page instantly without refetching
+  const [rawModules, setRawModules] = useState<CurriculumModule[]>([])
+  const [rawStudents, setRawStudents] = useState<Student[]>([])
+  const [rawAssessments, setRawAssessments] = useState<StudentAssessment[]>([])
+  const [pacingMap, setPacingMap] = useState<Map<string, PacingLog>>(new Map())
+  const [courses, setCourses] = useState<Course[]>([])
   const [indicatorDesc, setIndicatorDesc] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(true)
-  const [totalStudents, setTotalStudents] = useState(0)
-  const [completedModules, setCompletedModules] = useState(0)
-  const [hazardCount, setHazardCount] = useState(0)
-  const [warnings, setWarnings] = useState<RiskWarning[]>([])
+  // มุมมองแยกชั้นเรียน/วิชา — ค่าเริ่มต้นเห็นทั้งโรงเรียนเหมือนเดิม
+  const [selectedSubject, setSelectedSubject] = useState<string>('all')
+  const [selectedRoom, setSelectedRoom] = useState<string | null>(null)
+
   useEffect(() => {
     async function load() {
       // scope growth-table reads to the current term instead of the school's entire
@@ -51,6 +57,7 @@ export default function DashboardPage() {
         assessments,
         { data: students },
         { data: inds },
+        { data: crs },
       ] = await Promise.all([
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('module_code'),
         // NOT term-scoped: pacing status is cumulative per module (latest-wins below), so a
@@ -65,78 +72,87 @@ export default function DashboardPage() {
         }),
         supabase.from('students').select('*').eq('school_id', schoolId),
         supabase.from('indicators').select('subject, code, description'),
+        supabase.from('courses').select('*').eq('school_id', schoolId),
       ])
 
       if (!modules) { setLoading(false); return }
       setIndicatorDesc(new Map(
         ((inds ?? []) as Pick<Indicator, 'subject' | 'code' | 'description'>[]).map(i => [`${i.subject}::${i.code}`, i.description])
       ))
-
-      const dedupedAssessments = latestAssessmentPerPlan((assessments ?? []) as StudentAssessment[])
-
-      const visibleModules = modules
-      const visibleStudents = students ?? []
-
-      setTotalStudents(visibleStudents.length)
-      setWarnings(
-        computeAtRiskStudents(
-          visibleStudents as Student[],
-          dedupedAssessments,
-          visibleModules as CurriculumModule[]
-        )
-      )
+      setRawModules(modules as CurriculumModule[])
+      setRawStudents((students ?? []) as Student[])
+      setRawAssessments(latestAssessmentPerPlan((assessments ?? []) as StudentAssessment[]))
+      setCourses((crs ?? []) as Course[])
 
       // Build pacing map (latest per module)
-      const pacingMap = new Map<string, PacingLog>()
+      const pm = new Map<string, PacingLog>()
       pacings?.forEach(p => {
-        const existing = pacingMap.get(p.module_id)
-        if (!existing || p.created_at > existing.created_at) {
-          pacingMap.set(p.module_id, p)
-        }
+        const existing = pm.get(p.module_id)
+        if (!existing || p.created_at > existing.created_at) pm.set(p.module_id, p)
       })
-
-      // Group assessments by module
-      const assessmentsByModule = new Map<string, StudentAssessment[]>()
-      dedupedAssessments.forEach(a => {
-        if (!assessmentsByModule.has(a.module_id)) {
-          assessmentsByModule.set(a.module_id, [])
-        }
-        assessmentsByModule.get(a.module_id)!.push(a)
-      })
-
-      // Build per-module summaries (using filtered modules)
-      const built: ModuleSummary[] = visibleModules.map(module => {
-        const pacing = pacingMap.get(module.id)
-        const modAssessments = assessmentsByModule.get(module.id) ?? []
-        const avgScore = modAssessments.length
-          ? modAssessments.reduce((sum, a) => sum + a.academic_score, 0) / modAssessments.length
-          : 0
-        const greenCount = modAssessments.filter(a => a.focus_color === 'Green').length
-        const yellowCount = modAssessments.filter(a => a.focus_color === 'Yellow').length
-        const redCount = modAssessments.filter(a => a.focus_color === 'Red').length
-        const isHazard = pacing?.status === 'Completed' && modAssessments.length > 0 && avgScore < 1.0
-
-        return {
-          module,
-          pacing,
-          avgScore,
-          studentCount: modAssessments.length,
-          greenCount,
-          yellowCount,
-          redCount,
-          isHazard,
-        }
-      })
-
-      setSummaries(built)
-      setCompletedModules(built.filter(s => s.pacing?.status === 'Completed').length)
-      setHazardCount(built.filter(s => s.isHazard).length)
-
-      setTagData(buildModuleTagSummary(built))
+      setPacingMap(pm)
       setLoading(false)
     }
     load()
   }, [])
+
+  const subjects = useMemo(
+    () => Array.from(new Set(rawModules.map(m => m.subject))).sort(),
+    [rawModules]
+  )
+  const roomOptions = useMemo(
+    () => Array.from(new Set(rawStudents.map(s => s.class_name).filter(Boolean))).sort(),
+    [rawStudents]
+  )
+  const courseName = (key: string) => courses.find(c => c.subject_key === key)?.name ?? key.replace('_', ' ')
+
+  const visibleModules = useMemo(
+    () => selectedSubject === 'all' ? rawModules : rawModules.filter(m => m.subject === selectedSubject),
+    [rawModules, selectedSubject]
+  )
+  const visibleStudents = useMemo(
+    () => selectedRoom ? rawStudents.filter(s => s.class_name === selectedRoom) : rawStudents,
+    [rawStudents, selectedRoom]
+  )
+  const visibleAssessments = useMemo(() => {
+    const moduleIds = new Set(visibleModules.map(m => m.id))
+    const studentIds = new Set(visibleStudents.map(s => s.id))
+    return rawAssessments.filter(a => moduleIds.has(a.module_id) && studentIds.has(a.student_id))
+  }, [rawAssessments, visibleModules, visibleStudents])
+
+  const summaries = useMemo<ModuleSummary[]>(() => {
+    const assessmentsByModule = new Map<string, StudentAssessment[]>()
+    visibleAssessments.forEach(a => {
+      if (!assessmentsByModule.has(a.module_id)) assessmentsByModule.set(a.module_id, [])
+      assessmentsByModule.get(a.module_id)!.push(a)
+    })
+    return visibleModules.map(module => {
+      const pacing = pacingMap.get(module.id)
+      const modAssessments = assessmentsByModule.get(module.id) ?? []
+      const avgScore = modAssessments.length
+        ? modAssessments.reduce((sum, a) => sum + a.academic_score, 0) / modAssessments.length
+        : 0
+      return {
+        module,
+        pacing,
+        avgScore,
+        studentCount: modAssessments.length,
+        greenCount: modAssessments.filter(a => a.focus_color === 'Green').length,
+        yellowCount: modAssessments.filter(a => a.focus_color === 'Yellow').length,
+        redCount: modAssessments.filter(a => a.focus_color === 'Red').length,
+        isHazard: pacing?.status === 'Completed' && modAssessments.length > 0 && avgScore < 1.0,
+      }
+    })
+  }, [visibleModules, visibleAssessments, pacingMap])
+
+  const tagData = useMemo(() => buildModuleTagSummary(summaries), [summaries])
+  const warnings = useMemo(
+    () => computeAtRiskStudents(visibleStudents, visibleAssessments, visibleModules),
+    [visibleStudents, visibleAssessments, visibleModules]
+  )
+  const totalStudents = visibleStudents.length
+  const completedModules = summaries.filter(s => s.pacing?.status === 'Completed').length
+  const hazardCount = summaries.filter(s => s.isHazard).length
 
   const barData = summaries
     .filter(s => s.studentCount > 0)
@@ -228,6 +244,36 @@ export default function DashboardPage() {
           </div>
         </div>
       </motion.section>
+
+      {/* ===== มุมมองแยกชั้นเรียน / วิชา — ทุกการ์ดในหน้านี้คำนวณใหม่ตามที่เลือก ===== */}
+      <div className="space-y-2">
+        <RoomFilter rooms={roomOptions} value={selectedRoom} onChange={setSelectedRoom} />
+        {subjects.length > 1 && (
+          <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+            <button onClick={() => setSelectedSubject('all')}
+              className={`flex-shrink-0 text-xs font-bold px-3.5 py-2 rounded-xl border ${
+                selectedSubject === 'all' ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-gray-200 text-gray-500'
+              }`}>
+              ทุกวิชา
+            </button>
+            {subjects.map(s => (
+              <button key={s} onClick={() => setSelectedSubject(s)}
+                className={`flex-shrink-0 text-xs font-bold px-3.5 py-2 rounded-xl border ${
+                  selectedSubject === s ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-gray-200 text-gray-500'
+                }`}>
+                {courseName(s)}
+              </button>
+            ))}
+          </div>
+        )}
+        {(selectedRoom || selectedSubject !== 'all') && (
+          <p className="text-[11px] text-gray-400">
+            กำลังดู: {selectedRoom ?? 'ทุกห้อง'} · {selectedSubject === 'all' ? 'ทุกวิชา' : courseName(selectedSubject)}
+            <button onClick={() => { setSelectedRoom(null); setSelectedSubject('all') }}
+              className="ml-2 text-blue-500 font-semibold hover:underline">ล้างตัวกรอง</button>
+          </p>
+        )}
+      </div>
 
       {/* ===== ทางลัด — ระบบเดียวกันทุกปุ่ม สีอยู่ที่ไอคอนเท่านั้น ===== */}
       <div className="grid grid-cols-5 gap-2">

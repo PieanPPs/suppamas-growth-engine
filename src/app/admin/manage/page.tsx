@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import {
-  UploadCloud, GraduationCap, Shuffle, Settings, ChevronRight, Wrench, Flag, UserCog, FileText, BookMarked,
+  UploadCloud, GraduationCap, Settings, ChevronRight, Wrench, Flag, UserCog, FileText, BookMarked,
 } from 'lucide-react'
 
 const sections = [
@@ -34,10 +34,6 @@ const sections = [
   {
     href: '/teacher/pp6/print', icon: FileText, color: 'bg-violet-500',
     title: 'ปพ.6 รายงานรายบุคคล', desc: 'พิมพ์รายงานนักเรียนรายคนทั้งห้อง — เกรด เวลาเรียน พฤติกรรม',
-  },
-  {
-    href: '/tools/random', icon: Shuffle, color: 'bg-pink-500',
-    title: 'สุ่มรายชื่อนักเรียน', desc: 'เครื่องมือช่วยครู · สุ่มเรียกตอบ มีอนิเมชัน',
   },
   {
     href: '/admin/settings', icon: Settings, color: 'bg-gray-500',

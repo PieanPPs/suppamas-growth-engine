@@ -17,7 +17,7 @@ import {
 } from 'recharts'
 import {
   AlertTriangle, BookOpen, Users, TrendingUp, Loader2, TrendingDown,
-  ClipboardCheck, CheckCircle2, CircleDashed, CalendarDays,
+  ClipboardCheck, CheckCircle2, CircleDashed, CalendarDays, Dices,
 } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
 import { getSession } from '@/lib/auth'
@@ -261,6 +261,15 @@ export default function TeacherOverviewPage() {
           <Users size={15} className="text-blue-500" /> ดูรายบุคคล / จัดกลุ่มนักเรียนตามความสามารถ
         </span>
         <span className="text-xs text-blue-600 font-semibold">เปิดดู →</span>
+      </Link>
+
+      {/* เครื่องมือช่วยครูในห้องเรียน (สุ่มชื่อ จับกลุ่ม จับเวลา — ย้ายมาจากระบบหลังบ้าน) */}
+      <Link href="/teacher/tools"
+        className="flex items-center justify-between bg-white border border-gray-200 rounded-2xl px-4 py-3 shadow-sm hover:border-pink-300">
+        <span className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+          <Dices size={15} className="text-pink-500" /> เครื่องมือช่วยครู — สุ่มชื่อ · จับกลุ่ม · จับเวลา
+        </span>
+        <span className="text-xs text-pink-600 font-semibold">เปิดดู →</span>
       </Link>
 
       {/* Hazard alerts */}
