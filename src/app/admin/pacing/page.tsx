@@ -10,7 +10,7 @@ import {
   CurriculumModule, PacingLog, StudentAssessment, PlanSubmission, AcademicSettings,
   Indicator, ModuleIndicator, Test, TestScore,
 } from '@/lib/types'
-import { currentAcademicWeek } from '@/lib/pacing'
+import { currentAcademicWeek, latestPacingByLessonPlan } from '@/lib/pacing'
 import {
   buildCrossTracking, QUADRANT_META, CrossRow, Quadrant,
 } from '@/lib/cross-tracking'
@@ -44,7 +44,7 @@ export default function CrossTrackingPage() {
       const [
         { data: modules }, pacings, assessments,
         plans, { data: settings }, { data: indicators }, { data: moduleIndicators },
-        { data: tests }, testScores,
+        { data: tests }, testScores, { data: lessonPlans },
       ] = await Promise.all([
         supabase.from('curriculum_modules').select('*').order('subject').order('sequence_order', { nullsFirst: false }),
         // NOT term-scoped: pacing status is cumulative per module, used as latest-wins below.
@@ -68,6 +68,7 @@ export default function CrossTrackingPage() {
           if (termStart) q = q.gte('created_at', termStart)
           return q.order('id')
         }),
+        supabase.from('lesson_plans').select('id, module_id').eq('school_id', schoolId),
       ])
 
       const week = settings ? currentAcademicWeek((settings as AcademicSettings).term_start_date) : 0
@@ -75,10 +76,41 @@ export default function CrossTrackingPage() {
 
       const dedupedAssessments = latestAssessmentPerPlan((assessments ?? []) as StudentAssessment[])
 
+      // A teacher can mark "สอนจบ" per lesson-plan hour (its own pacing_logs row, scoped by
+      // lesson_plan_id) without ever touching the separate module-level status button. Without
+      // this rollup, a module where every hour is individually done still reads as not-Completed
+      // here, which under-counts indicator coverage and misclassifies the cross-tracking matrix
+      // (same root cause fixed in teacher/pacing/page.tsx, commit 39f3671).
+      const rawPacings = (pacings ?? []) as PacingLog[]
+      const pacingsByLessonPlan = latestPacingByLessonPlan(rawPacings)
+      const lessonPlanIdsByModule = new Map<string, string[]>()
+      ;((lessonPlans ?? []) as { id: string; module_id: string | null }[]).forEach(lp => {
+        if (!lp.module_id) return
+        const ids = lessonPlanIdsByModule.get(lp.module_id) ?? []
+        ids.push(lp.id)
+        lessonPlanIdsByModule.set(lp.module_id, ids)
+      })
+      const moduleLevelCompleted = new Set(
+        rawPacings.filter(p => !p.lesson_plan_id && p.status === 'Completed').map(p => p.module_id)
+      )
+      const rollupCompletedAt = new Date().toISOString()
+      const rollupLogs: PacingLog[] = []
+      lessonPlanIdsByModule.forEach((ids, moduleId) => {
+        if (moduleLevelCompleted.has(moduleId) || ids.length === 0) return
+        const allDone = ids.every(id => pacingsByLessonPlan.get(id)?.status === 'Completed')
+        if (allDone) {
+          rollupLogs.push({
+            id: `rollup-${moduleId}`, teacher_id: '', module_id: moduleId,
+            lesson_plan_id: null, status: 'Completed', created_at: rollupCompletedAt,
+          })
+        }
+      })
+      const effectivePacings = [...rawPacings, ...rollupLogs]
+
       const planSet = new Set((plans ?? []).map((p: PlanSubmission) => p.module_id))
       const built = buildCrossTracking(
         (modules ?? []) as CurriculumModule[],
-        (pacings ?? []) as PacingLog[],
+        effectivePacings,
         dedupedAssessments,
         planSet,
         week
@@ -89,7 +121,7 @@ export default function CrossTrackingPage() {
       const inds = (indicators ?? []) as Indicator[]
       if (inds.length > 0) {
         const completedModuleIds = new Set(
-          (pacings ?? []).filter((p: PacingLog) => p.status === 'Completed').map((p: PacingLog) => p.module_id)
+          effectivePacings.filter((p: PacingLog) => p.status === 'Completed').map((p: PacingLog) => p.module_id)
         )
         const coveredIndicatorIds = new Set(
           (moduleIndicators ?? [])
