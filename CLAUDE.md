@@ -56,6 +56,6 @@ Phase 3: auto-compile ว.PA evidence portfolio per teacher (killer feature, dat
 - [ ] **MIGRATIONS PENDING USER RUN (2026-07-06)**: `supabase-system13-pdpa.sql` (URGENT — deployed login code calls `login_with_pin` RPC; login is broken until this runs) and `supabase-system14-remediation.sql` (remediation page errors until the table exists). Both idempotent.
 - [ ] PDPA follow-through: teacher PINs can no longer be revealed in the admin UI (reset-only). Writes to students/teachers (and the pin/import RPCs) are still open to anyone with the anon key — real lockdown needs Supabase Auth (Phase 3, before school #2).
 - [ ] Family access codes for parent report links (from decision #3): `national_id` now lives in `student_private`, ready for a future `verify_family_code` RPC once national IDs are imported. QR sheet currently uses plain `/report/[id]` links (same exposure as before, per current design).
-- [ ] **MIGRATION PENDING USER RUN (2026-07-13)**: `supabase-system16-assessment-plans.sql` — adds `tests.lesson_plan_id` column + new `assessment_plans` table. Until run, `/teacher/lesson-plans/[id]`'s new "แผนการประเมินผู้เรียน" card and the lesson-plan selector on `/teacher/tests`' create form will error. Idempotent, safe to re-run.
-- [ ] **Confirm** `supabase-system15-fix-tests-type.sql` (the `tests_type_check` constraint fix allowing `'formative'`) has actually been run — was still unconfirmed as of the previous session batch.
+- [x] `supabase-system16-assessment-plans.sql` — confirmed run by user 2026-07-13. `tests.lesson_plan_id` and `assessment_plans` are live.
+- [x] `supabase-system15-fix-tests-type.sql` (the `tests_type_check` constraint fix allowing `'formative'`) — confirmed run by user 2026-07-13.
 
