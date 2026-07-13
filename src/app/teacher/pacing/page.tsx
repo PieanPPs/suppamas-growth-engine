@@ -16,6 +16,7 @@ import { SubjectStatus } from '@/components/pacing/subject-status'
 import { WeekSelector } from '@/components/pacing/week-selector'
 import { WeeklyPlanCard } from '@/components/pacing/weekly-plan-card'
 import { LessonPlanPacingCard } from '@/components/pacing/lesson-plan-pacing-card'
+import { TodayChecklist } from '@/components/pacing/today-checklist'
 import Link from 'next/link'
 import { Loader2, UserCircle2, ChevronDown, CalendarX2, BookPlus } from 'lucide-react'
 import { getSchoolId } from '@/lib/school'
@@ -23,6 +24,11 @@ import { getSession } from '@/lib/auth'
 import { fetchAllPaged, latestAssessmentPerPlan } from '@/lib/db'
 
 const TEACHER_KEY = 'sge_teacher_id'
+
+function todayDateStr(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 export default function PacingPage() {
   const supabase = createClient()
@@ -44,10 +50,13 @@ export default function PacingPage() {
   const [boundRooms, setBoundRooms] = useState<string[]>([])
   const [selectedWeek, setSelectedWeek] = useState(1)
   const [lessonPlansByModule, setLessonPlansByModule] = useState<Map<string, Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number' | 'planned_week'>[]>>(new Map())
+  // "วันนี้ยังไม่ได้ทำอะไรบ้าง" checklist — โมดูลที่มีคะแนนบันทึกวันนี้แล้ว / ห้องที่มีการเช็คชื่อวันนี้แล้ว
+  const [assessedTodayModuleIds, setAssessedTodayModuleIds] = useState<Set<string>>(new Set())
+  const [attendanceRoomsToday, setAttendanceRoomsToday] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     async function load() {
-      const [{ data: s }, { data: mods }, { data: ts }, { data: tasks }, assessments, { data: students }] = await Promise.all([
+      const [{ data: s }, { data: mods }, { data: ts }, { data: tasks }, assessments, { data: students }, { data: attendanceToday }] = await Promise.all([
         supabase.from('academic_settings').select('*').eq('school_id', schoolId).maybeSingle(),
         supabase.from('curriculum_modules').select('*').eq('school_id', schoolId).order('subject').order('sequence_order', { nullsFirst: false }),
         supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
@@ -57,6 +66,7 @@ export default function PacingPage() {
         fetchAllPaged<StudentAssessment>(() =>
           supabase.from('student_assessments').select('*').eq('school_id', schoolId).order('created_at')),
         supabase.from('students').select('id, class_name').eq('school_id', schoolId),
+        supabase.from('attendance').select('student_id').eq('school_id', schoolId).eq('date', todayDateStr()),
       ])
 
       const settingsRow = s ?? { id: 1, term_name: 'ภาคเรียนที่ 1', term_start_date: '2026-05-18', total_weeks: 20 }
@@ -65,6 +75,22 @@ export default function PacingPage() {
       setTeachers(ts ?? [])
       setHomeworkTasks(new Map((tasks ?? []).map((t: HomeworkTask) => [t.module_id, t])))
       setAllStudents((students ?? []) as Pick<Student, 'id' | 'class_name'>[])
+
+      // checklist: which modules already got an exit-ticket score today
+      const today = todayDateStr()
+      setAssessedTodayModuleIds(new Set(
+        (assessments ?? [])
+          .filter((a: StudentAssessment) => String(a.created_at).slice(0, 10) === today)
+          .map((a: StudentAssessment) => a.module_id)
+      ))
+      // checklist: which classrooms have at least one attendance row today (touch-only-exceptions
+      // model means "no rows" can also mean "checked, everyone present" — worded softly in the UI)
+      const classNameByStudent = new Map((students ?? []).map((st: Pick<Student, 'id' | 'class_name'>) => [st.id, st.class_name]))
+      setAttendanceRoomsToday(new Set(
+        (attendanceToday ?? [])
+          .map((a: { student_id: string }) => classNameByStudent.get(a.student_id))
+          .filter(Boolean) as string[]
+      ))
 
       const dedupedAssessments = latestAssessmentPerPlan(assessments ?? [])
 
@@ -213,6 +239,13 @@ export default function PacingPage() {
     .map(subject => ({ subject, mods: weekModules.filter(m => m.subject === subject) }))
     .filter(g => g.mods.length > 0)
 
+  // "วันนี้ยังไม่ได้ทำอะไรบ้าง" — เฉพาะโมดูล/ห้องที่ active สัปดาห์นี้จริง ไม่ใช่ทุกโมดูลในระบบ
+  const currentWeekModules = visibleModules.filter(m => weekOfLesson(m, currentWeek) != null)
+  const checklistModules = currentWeekModules.map(m => ({
+    moduleId: m.id, subject: m.subject, title: m.title, doneToday: assessedTodayModuleIds.has(m.id),
+  }))
+  const checklistRooms = boundRooms.map(room => ({ room, doneToday: attendanceRoomsToday.has(room) }))
+
   return (
     <div className="space-y-5 pb-8">
       <TermBanner settings={settings} onUpdate={setSettings} />
@@ -232,6 +265,9 @@ export default function PacingPage() {
           <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         </div>
       )}
+
+      {/* วันนี้ยังไม่ได้ทำอะไรบ้าง */}
+      {teacherId && <TodayChecklist modules={checklistModules} rooms={checklistRooms} />}
 
       {/* AI lesson plan shortcut */}
       <Link href="/teacher/lesson-plans"
