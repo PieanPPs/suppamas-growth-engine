@@ -79,6 +79,9 @@ const ATTEND_META: Record<AttendanceStatus, { label: string; cls: string }> = {
   leave:  { label: 'ลา', cls: 'bg-blue-500 border-blue-500 text-white' },
   late:   { label: 'สาย', cls: 'bg-yellow-400 border-yellow-400 text-white' },
 }
+// ขาด/ป่วย/ลา = ไม่ได้อยู่ในห้องเรียนวันนี้ ห้ามประเมิน (สมาธิ/ทักษะสังคม/ผลการเรียน สังเกตไม่ได้ถ้าไม่ได้มา)
+// "สาย" ไม่เข้าเงื่อนไขนี้ เพราะยังมาเรียนจริง แค่มาช้า
+const NOT_PRESENT_STATUSES: AttendanceStatus[] = ['absent', 'sick', 'leave']
 
 export default function AssessmentPage() {
   const supabase = createClient()
@@ -102,6 +105,8 @@ export default function AssessmentPage() {
   })
   const [attendance, setAttendance] = useState<Record<string, AttendanceRecord>>({})
   const [attendOpen, setAttendOpen] = useState(false)
+  // ครูเปิดให้ประเมินเองแบบตั้งใจ ทั้งที่นักเรียนขาด/ป่วย/ลา (กรณีพิเศษ เช่น ทำงานส่งจากบ้าน)
+  const [forceEval, setForceEval] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     async function load() {
@@ -305,10 +310,16 @@ export default function AssessmentPage() {
     setAllSaved(false)
   }
 
+  function isNotPresentToday(studentId: string): boolean {
+    const status = attendance[studentId]?.status
+    return !!status && NOT_PRESENT_STATUSES.includes(status)
+  }
+
   // จำนวนคนที่ยังไม่ถูกแตะรายคนและยังไม่บันทึก = เป้าหมายของ "ตั้งค่าทั้งห้อง"
+  // ไม่นับคนที่ขาด/ป่วย/ลา — ไม่ได้อยู่ในห้องเรียนให้ประเมิน
   const untouchedCount = visibleStudents.filter(s => {
     const g = grades[s.id]
-    return g && !g.saved && !g.touched
+    return g && !g.saved && !g.touched && !isNotPresentToday(s.id)
   }).length
 
   function applyClassDefault() {
@@ -316,7 +327,7 @@ export default function AssessmentPage() {
       const next = { ...prev }
       visibleStudents.forEach(s => {
         const g = next[s.id]
-        if (!g || g.saved || g.touched) return
+        if (!g || g.saved || g.touched || isNotPresentToday(s.id)) return
         next[s.id] = { ...g, ...classDefault, saved: false, fromDefault: true }
       })
       return next
@@ -364,7 +375,7 @@ export default function AssessmentPage() {
   async function saveAll() {
     if (!selectedModule) return
     setSaving('all')
-    const unsaved = visibleStudents.filter(s => !grades[s.id]?.saved)
+    const unsaved = visibleStudents.filter(s => !grades[s.id]?.saved && !isNotPresentToday(s.id))
     const results = await Promise.all(
       unsaved.map(async s => {
         const { id, error } = await persistGrade(s.id, grades[s.id])
@@ -587,10 +598,16 @@ export default function AssessmentPage() {
             touched: false, fromDefault: false,
           }
           const isSaving = saving === student.id
+          const notPresent = isNotPresentToday(student.id)
+          const showScoring = !notPresent || forceEval[student.id]
+          const attendanceStatus = attendance[student.id]?.status
           return (
             <Card
               key={student.id}
-              className={`border shadow-sm transition-all ${grade.saved ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white'}`}
+              className={`border shadow-sm transition-all ${
+                notPresent && !showScoring ? 'border-gray-200 bg-gray-50' :
+                grade.saved ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white'
+              }`}
             >
               <CardContent className="px-4 py-3">
                 <div className="flex items-center justify-between mb-3">
@@ -600,78 +617,95 @@ export default function AssessmentPage() {
                       {grade.fromDefault && !grade.touched && !grade.saved && (
                         <span className="text-[9px] font-medium bg-blue-50 text-blue-400 px-1.5 py-0.5 rounded-full">ค่าทั้งห้อง</span>
                       )}
-                      {attendance[student.id] && (
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${ATTEND_META[attendance[student.id].status].cls}`}>
-                          {ATTEND_META[attendance[student.id].status].label}วันนี้
+                      {attendanceStatus && (
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${ATTEND_META[attendanceStatus].cls}`}>
+                          {ATTEND_META[attendanceStatus].label}วันนี้
                         </span>
                       )}
                     </p>
                     <p className="text-xs text-gray-400">{student.class_name}</p>
                   </div>
-                  {grade.saved ? (
-                    <CheckCircle2 size={20} className="text-green-500" />
-                  ) : (
-                    <button
-                      onClick={() => saveStudent(student)}
-                      disabled={isSaving}
-                      className="bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95 disabled:opacity-50"
-                    >
-                      {isSaving ? <Loader2 size={14} className="animate-spin" /> : grade.recordId ? 'บันทึกแก้ไข' : 'บันทึก'}
-                    </button>
+                  {showScoring && (
+                    grade.saved ? (
+                      <CheckCircle2 size={20} className="text-green-500" />
+                    ) : (
+                      <button
+                        onClick={() => saveStudent(student)}
+                        disabled={isSaving}
+                        className="bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95 disabled:opacity-50"
+                      >
+                        {isSaving ? <Loader2 size={14} className="animate-spin" /> : grade.recordId ? 'บันทึกแก้ไข' : 'บันทึก'}
+                      </button>
+                    )
                   )}
                 </div>
 
-                {/* ① สมาธิ — สังเกตทั้งคาบ ตั้งแต่ช่วง Hook */}
-                <div className="flex items-center justify-between mb-2.5">
-                  <div className="w-24 flex-shrink-0">
-                    <span className="text-xs font-medium text-gray-600 block">สมาธิ</span>
-                    <span className="text-[10px] text-gray-400 leading-tight block">ภาพรวมทั้งคาบ</span>
+                {notPresent && !showScoring ? (
+                  // ขาด/ป่วย/ลา — ไม่ได้อยู่ในห้องเรียน ไม่มีอะไรให้สังเกต/ประเมินวันนี้
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-gray-400">{ATTEND_META[attendanceStatus!].label}วันนี้ — ไม่ต้องประเมิน</p>
+                    <button
+                      onClick={() => setForceEval(prev => ({ ...prev, [student.id]: true }))}
+                      className="text-[11px] text-blue-500 hover:text-blue-700 font-medium"
+                    >
+                      ยังต้องการประเมิน?
+                    </button>
                   </div>
-                  <div className="flex gap-1.5">
-                    {(Object.entries(FOCUS_CONFIG) as [FocusColor, typeof FOCUS_CONFIG[FocusColor]][]).map(([color, cfg]) => (
-                      <button
-                        key={color}
-                        onClick={() => updateGrade(student.id, 'focus_color', color)}
-                        className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all active:scale-95 ${grade.focus_color === color ? cfg.active : cfg.bg}`}
-                      >
-                        {cfg.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                ) : (
+                  <>
+                    {/* ① สมาธิ — สังเกตทั้งคาบ ตั้งแต่ช่วง Hook */}
+                    <div className="flex items-center justify-between mb-2.5">
+                      <div className="w-24 flex-shrink-0">
+                        <span className="text-xs font-medium text-gray-600 block">สมาธิ</span>
+                        <span className="text-[10px] text-gray-400 leading-tight block">ภาพรวมทั้งคาบ</span>
+                      </div>
+                      <div className="flex gap-1.5">
+                        {(Object.entries(FOCUS_CONFIG) as [FocusColor, typeof FOCUS_CONFIG[FocusColor]][]).map(([color, cfg]) => (
+                          <button
+                            key={color}
+                            onClick={() => updateGrade(student.id, 'focus_color', color)}
+                            className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all active:scale-95 ${grade.focus_color === color ? cfg.active : cfg.bg}`}
+                          >
+                            {cfg.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-                {/* ② ทักษะสังคม — ระดับการมีส่วนร่วมช่วงกิจกรรมกลุ่ม */}
-                <div className="flex items-center justify-between mb-2.5">
-                  <div className="w-24 flex-shrink-0">
-                    <span className="text-xs font-medium text-gray-600 block">ทักษะสังคม</span>
-                    <span className="text-[10px] text-gray-400 leading-tight block">ช่วงกิจกรรมกลุ่ม 20 นาที</span>
-                  </div>
-                  <div className="flex gap-1.5">
-                    {([0, 1, 2] as const).map(level => (
-                      <button
-                        key={level}
-                        onClick={() => updateGrade(student.id, 'soft_skill_score', level)}
-                        className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all active:scale-95 ${
-                          grade.soft_skill_score === level ? SOFT_CONFIG[level].active : 'bg-gray-100 text-gray-500'
-                        }`}
-                      >
-                        {SOFT_CONFIG[level].label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                    {/* ② ทักษะสังคม — ระดับการมีส่วนร่วมช่วงกิจกรรมกลุ่ม */}
+                    <div className="flex items-center justify-between mb-2.5">
+                      <div className="w-24 flex-shrink-0">
+                        <span className="text-xs font-medium text-gray-600 block">ทักษะสังคม</span>
+                        <span className="text-[10px] text-gray-400 leading-tight block">ช่วงกิจกรรมกลุ่ม 20 นาที</span>
+                      </div>
+                      <div className="flex gap-1.5">
+                        {([0, 1, 2] as const).map(level => (
+                          <button
+                            key={level}
+                            onClick={() => updateGrade(student.id, 'soft_skill_score', level)}
+                            className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all active:scale-95 ${
+                              grade.soft_skill_score === level ? SOFT_CONFIG[level].active : 'bg-gray-100 text-gray-500'
+                            }`}
+                          >
+                            {SOFT_CONFIG[level].label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-                {/* ③ ผลการเรียน — Exit Ticket ท้ายคาบ */}
-                <div className="flex items-center justify-between">
-                  <div className="w-24 flex-shrink-0">
-                    <span className="text-xs font-medium text-gray-600 block">ผลการเรียน</span>
-                    <span className="text-[10px] text-gray-400 leading-tight block">ตามจุดประสงค์การเรียนรู้</span>
-                  </div>
-                  <PassFail
-                    value={grade.academic_score}
-                    onChange={v => updateGrade(student.id, 'academic_score', v)}
-                  />
-                </div>
+                    {/* ③ ผลการเรียน — Exit Ticket ท้ายคาบ */}
+                    <div className="flex items-center justify-between">
+                      <div className="w-24 flex-shrink-0">
+                        <span className="text-xs font-medium text-gray-600 block">ผลการเรียน</span>
+                        <span className="text-[10px] text-gray-400 leading-tight block">ตามจุดประสงค์การเรียนรู้</span>
+                      </div>
+                      <PassFail
+                        value={grade.academic_score}
+                        onChange={v => updateGrade(student.id, 'academic_score', v)}
+                      />
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           )
