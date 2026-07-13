@@ -50,8 +50,10 @@ export default function PacingPage() {
   const [boundRooms, setBoundRooms] = useState<string[]>([])
   const [selectedWeek, setSelectedWeek] = useState(1)
   const [lessonPlansByModule, setLessonPlansByModule] = useState<Map<string, Pick<LessonPlan, 'id' | 'topic' | 'status' | 'plan_number' | 'planned_week'>[]>>(new Map())
-  // "วันนี้ยังไม่ได้ทำอะไรบ้าง" checklist — โมดูลที่มีคะแนนบันทึกวันนี้แล้ว / ห้องที่มีการเช็คชื่อวันนี้แล้ว
-  const [assessedTodayModuleIds, setAssessedTodayModuleIds] = useState<Set<string>>(new Set())
+  // "วันนี้ยังไม่ได้ทำอะไรบ้าง" checklist — เช็คชื่อ กับ บันทึกพฤติกรรม/คะแนน เป็นคนละเรื่องกัน และต้อง
+  // ตรวจแยกทีละห้อง ไม่ใช่ทีละวิชา — ครูคนเดียวสอนวิชาเดียวกันหลายห้องได้ ถ้าเช็คแค่ระดับวิชา
+  // พอห้องหนึ่งถูกบันทึกแล้ว อีกห้องที่ครูลืมจริงๆ จะถูกกลบไปด้วย (keyed `${moduleId}::${className}`)
+  const [assessedTodayKeys, setAssessedTodayKeys] = useState<Set<string>>(new Set())
   const [attendanceRoomsToday, setAttendanceRoomsToday] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -76,16 +78,18 @@ export default function PacingPage() {
       setHomeworkTasks(new Map((tasks ?? []).map((t: HomeworkTask) => [t.module_id, t])))
       setAllStudents((students ?? []) as Pick<Student, 'id' | 'class_name'>[])
 
-      // checklist: which modules already got an exit-ticket score today
+      // checklist: which (module, classroom) pairs already got an exit-ticket score today —
+      // scoped by room, not just by module, so a forgotten second classroom doesn't get hidden
+      // behind a different classroom's completed one.
       const today = todayDateStr()
-      setAssessedTodayModuleIds(new Set(
+      const classNameByStudent = new Map((students ?? []).map((st: Pick<Student, 'id' | 'class_name'>) => [st.id, st.class_name]))
+      setAssessedTodayKeys(new Set(
         (assessments ?? [])
           .filter((a: StudentAssessment) => String(a.created_at).slice(0, 10) === today)
-          .map((a: StudentAssessment) => a.module_id)
+          .map((a: StudentAssessment) => `${a.module_id}::${classNameByStudent.get(a.student_id) ?? ''}`)
       ))
       // checklist: which classrooms have at least one attendance row today (touch-only-exceptions
       // model means "no rows" can also mean "checked, everyone present" — worded softly in the UI)
-      const classNameByStudent = new Map((students ?? []).map((st: Pick<Student, 'id' | 'class_name'>) => [st.id, st.class_name]))
       setAttendanceRoomsToday(new Set(
         (attendanceToday ?? [])
           .map((a: { student_id: string }) => classNameByStudent.get(a.student_id))
@@ -205,6 +209,7 @@ export default function PacingPage() {
   const totalStudents = boundRooms.length > 0
     ? allStudents.filter(s => boundRooms.includes(s.class_name)).length
     : allStudents.length
+  const allRoomNames = Array.from(new Set(allStudents.map(s => s.class_name).filter(Boolean)))
 
   const currentWeek = currentAcademicWeek(settings.term_start_date)
   const completedIds = new Set(
@@ -240,10 +245,16 @@ export default function PacingPage() {
     .filter(g => g.mods.length > 0)
 
   // "วันนี้ยังไม่ได้ทำอะไรบ้าง" — เฉพาะโมดูล/ห้องที่ active สัปดาห์นี้จริง ไม่ใช่ทุกโมดูลในระบบ
+  // เช็คทีละห้อง × ทีละโมดูล เพราะครูคนเดียวอาจสอนวิชาเดียวกันหลายห้อง — ห้องที่ถูกลืมจริงๆ
+  // ต้องโผล่แยกจากห้องที่ทำแล้ว ไม่ใช่ถูกกลบด้วยห้องอื่นที่ทำแล้วในโมดูลเดียวกัน
   const currentWeekModules = visibleModules.filter(m => weekOfLesson(m, currentWeek) != null)
-  const checklistModules = currentWeekModules.map(m => ({
-    moduleId: m.id, subject: m.subject, title: m.title, doneToday: assessedTodayModuleIds.has(m.id),
-  }))
+  const checklistRoomsForAssess = boundRooms.length > 0 ? boundRooms : allRoomNames
+  const checklistModules = currentWeekModules.flatMap(m =>
+    checklistRoomsForAssess.map(room => ({
+      moduleId: m.id, subject: m.subject, title: m.title, room,
+      doneToday: assessedTodayKeys.has(`${m.id}::${room}`),
+    }))
+  )
   const checklistRooms = boundRooms.map(room => ({ room, doneToday: attendanceRoomsToday.has(room) }))
 
   return (

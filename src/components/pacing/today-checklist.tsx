@@ -2,12 +2,13 @@
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { CheckCircle2, Circle, PartyPopper, ListChecks } from 'lucide-react'
+import { CheckCircle2, Circle, PartyPopper, ListChecks, CalendarCheck, Star } from 'lucide-react'
 
 export interface ChecklistModuleItem {
   moduleId: string
   subject: string
   title: string
+  room: string
   doneToday: boolean
 }
 
@@ -38,44 +39,58 @@ export function TodayChecklist({
         {totalPending === 0 ? 'วันนี้ทำครบแล้ว เยี่ยมมาก!' : `วันนี้ยังไม่ได้ทำ ${totalPending} รายการ`}
       </p>
 
-      {totalPending > 0 && (
-        <div className="mt-2 space-y-1.5">
-          {pendingModules.map(m => (
-            <Link key={m.moduleId} href={`/teacher/assessment?module=${m.moduleId}`}
-              className="flex items-center justify-between bg-white/70 hover:bg-white rounded-xl px-3 py-2 transition-colors">
-              <span className="flex items-center gap-2 text-xs text-gray-700">
-                <Circle size={13} className="text-amber-400 flex-shrink-0" />
-                ยังไม่บันทึกคะแนน — <span className="font-semibold">{m.subject.replace('_', ' ')}</span> ({m.title})
-              </span>
-              <span className="text-[11px] text-amber-700 font-semibold flex-shrink-0">ไปบันทึก →</span>
-            </Link>
+      {totalPending === 0 ? (
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {rooms.map(r => (
+            <span key={`room-${r.room}`} className="inline-flex items-center gap-1 text-[11px] font-medium bg-white/70 text-green-700 px-2 py-1 rounded-full">
+              <CheckCircle2 size={11} /> เช็คชื่อ {r.room}
+            </span>
           ))}
-          {pendingRooms.map(r => (
-            <Link key={r.room} href="/teacher/assessment"
-              className="flex items-center justify-between bg-white/70 hover:bg-white rounded-xl px-3 py-2 transition-colors">
-              <span className="flex items-center gap-2 text-xs text-gray-700">
-                <Circle size={13} className="text-amber-400 flex-shrink-0" />
-                ยังไม่พบการเช็คชื่อวันนี้ — <span className="font-semibold">{r.room}</span>
-                <span className="text-gray-400">(ถ้ามาครบแล้วข้ามได้เลย)</span>
-              </span>
-              <span className="text-[11px] text-amber-700 font-semibold flex-shrink-0">ไปเช็คชื่อ →</span>
-            </Link>
+          {modules.map(m => (
+            <span key={`mod-${m.moduleId}-${m.room}`} className="inline-flex items-center gap-1 text-[11px] font-medium bg-white/70 text-green-700 px-2 py-1 rounded-full">
+              <CheckCircle2 size={11} /> {m.subject.replace('_', ' ')} {m.room}
+            </span>
           ))}
         </div>
-      )}
+      ) : (
+        <div className="mt-2 space-y-3">
+          {/* เช็คชื่อ — คนละเรื่องกับบันทึกพฤติกรรม/คะแนน */}
+          {pendingRooms.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-semibold text-amber-700 flex items-center gap-1">
+                <CalendarCheck size={12} /> เช็คชื่อ
+              </p>
+              {pendingRooms.map(r => (
+                <Link key={r.room} href="/teacher/assessment"
+                  className="flex items-center justify-between bg-white/70 hover:bg-white rounded-xl px-3 py-2 transition-colors">
+                  <span className="flex items-center gap-2 text-xs text-gray-700">
+                    <Circle size={13} className="text-amber-400 flex-shrink-0" />
+                    ยังไม่พบการเช็คชื่อวันนี้ — <span className="font-semibold">{r.room}</span>
+                    <span className="text-gray-400">(ถ้ามาครบแล้วข้ามได้เลย)</span>
+                  </span>
+                  <span className="text-[11px] text-amber-700 font-semibold flex-shrink-0">ไปเช็คชื่อ →</span>
+                </Link>
+              ))}
+            </div>
+          )}
 
-      {totalPending === 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {modules.map(m => (
-            <span key={m.moduleId} className="inline-flex items-center gap-1 text-[11px] font-medium bg-white/70 text-green-700 px-2 py-1 rounded-full">
-              <CheckCircle2 size={11} /> {m.subject.replace('_', ' ')}
-            </span>
-          ))}
-          {rooms.map(r => (
-            <span key={r.room} className="inline-flex items-center gap-1 text-[11px] font-medium bg-white/70 text-green-700 px-2 py-1 rounded-full">
-              <CheckCircle2 size={11} /> {r.room}
-            </span>
-          ))}
+          {pendingModules.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-semibold text-amber-700 flex items-center gap-1">
+                <Star size={12} /> บันทึกพฤติกรรม/คะแนน
+              </p>
+              {pendingModules.map(m => (
+                <Link key={`${m.moduleId}-${m.room}`} href={`/teacher/assessment?module=${m.moduleId}`}
+                  className="flex items-center justify-between bg-white/70 hover:bg-white rounded-xl px-3 py-2 transition-colors">
+                  <span className="flex items-center gap-2 text-xs text-gray-700">
+                    <Circle size={13} className="text-amber-400 flex-shrink-0" />
+                    ยังไม่บันทึกคะแนน — <span className="font-semibold">{m.subject.replace('_', ' ')}</span> ({m.title}) ห้อง <span className="font-semibold">{m.room}</span>
+                  </span>
+                  <span className="text-[11px] text-amber-700 font-semibold flex-shrink-0">ไปบันทึก →</span>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </motion.div>
