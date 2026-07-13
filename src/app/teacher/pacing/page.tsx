@@ -184,6 +184,14 @@ export default function PacingPage() {
   const completedIds = new Set(
     Array.from(pacings.values()).filter(p => p.status === 'Completed').map(p => p.module_id)
   )
+  // ครูมักกด "สอนจบ" ที่การ์ดแผนรายชั่วโมง (per lesson-plan) ไม่ใช่ปุ่มสถานะระดับหน่วยที่หัวการ์ด
+  // สัปดาห์ — ถ้าไม่ roll up ตรงนี้ สัญญาณ "สอนช้ากว่าแผน" จะค้างแม้สอนจบครบทุกชั่วโมงแล้ว
+  // เพราะสองอย่างนี้เป็นคนละแถวใน pacing_logs (ดู latestPacingByModule vs latestPacingByLessonPlan)
+  lessonPlansByModule.forEach((lps, moduleId) => {
+    if (lps.length === 0) return
+    const allDone = lps.every(lp => pacingsByLessonPlan.get(lp.id)?.status === 'Completed')
+    if (allDone) completedIds.add(moduleId)
+  })
 
   // filter by selected teacher's subjects (if teacher chosen)
   const selectedTeacher = teacherId ? teachers.find(t => t.id === teacherId) : null
