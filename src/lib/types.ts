@@ -51,7 +51,20 @@ export interface Test {
   type: TestType
   max_score: number
   test_date: string | null
+  lesson_plan_id: string | null
   created_at: string
+}
+
+export type AssessmentMethod = 'exit_ticket' | 'quiz' | 'observation' | 'homework'
+
+export interface AssessmentPlanRow {
+  id: string
+  lesson_plan_id: string
+  methods: AssessmentMethod[]
+  target_indicators: string | null
+  criteria: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface TestIndicator {

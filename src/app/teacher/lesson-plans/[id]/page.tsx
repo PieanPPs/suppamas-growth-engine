@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { WorksheetPromptKit } from '@/components/worksheets/worksheet-prompt-kit'
+import { AssessmentPlanCard } from '@/components/lesson-plans/assessment-plan-card'
 
 type DraftPlan = Pick<LessonPlan,
   'topic' | 'subject' | 'grade' |
@@ -675,6 +676,8 @@ export default function LessonPlanDetailPage() {
           )}
         </div>
       </div>
+
+      <AssessmentPlanCard plan={plan} />
 
       {/* Post-lesson reflection */}
       <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-4 space-y-4">

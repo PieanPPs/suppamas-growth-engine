@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import {
-  Student, Teacher, Course, Indicator, Test, TestType, TestScore, TestIndicator, TestItem, TestItemResponse,
+  Student, Teacher, Course, Indicator, Test, TestType, TestScore, TestIndicator, TestItem, TestItemResponse, LessonPlan,
 } from '@/lib/types'
 import { ScoreModeSwitch } from '@/components/score-mode-switch'
 import { RoomFilter, readStoredRoom, storeRoom } from '@/components/room-filter'
@@ -54,12 +54,13 @@ export default function TestsPage() {
   const [allScores, setAllScores] = useState<TestScore[]>([])
   const [testItems, setTestItems] = useState<TestItem[]>([])
   const [allResponses, setAllResponses] = useState<TestItemResponse[]>([])
+  const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([])
   const [promptOpen, setPromptOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
 
   // create form
   const [creating, setCreating] = useState(false)
-  const [draft, setDraft] = useState({ title: '', subject: '', type: 'quiz' as TestType, maxScore: '20', date: new Date().toISOString().slice(0, 10) })
+  const [draft, setDraft] = useState({ title: '', subject: '', type: 'quiz' as TestType, maxScore: '20', date: new Date().toISOString().slice(0, 10), lessonPlanId: '' })
   const [draftIndicators, setDraftIndicators] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
 
@@ -73,7 +74,7 @@ export default function TestsPage() {
   const [savedFlash, setSavedFlash] = useState(false)
 
   async function loadAll() {
-    const [{ data: ts }, { data: crs }, { data: inds }, { data: stds }, { data: tst }, { data: ti }, sc, items, resp] = await Promise.all([
+    const [{ data: ts }, { data: crs }, { data: inds }, { data: stds }, { data: tst }, { data: ti }, sc, items, resp, { data: lps }] = await Promise.all([
       supabase.from('teachers').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('courses').select('*').eq('school_id', schoolId).order('name'),
       supabase.from('indicators').select('*').eq('school_id', schoolId).order('standard').order('sequence_order'),
@@ -83,10 +84,11 @@ export default function TestsPage() {
       fetchAllPaged<TestScore>(() => supabase.from('test_scores').select('*').eq('school_id', schoolId).order('id')),
       fetchAllPaged<TestItem>(() => supabase.from('test_items').select('*').order('test_id').order('item_no')),
       fetchAllPaged<TestItemResponse>(() => supabase.from('test_item_responses').select('*').eq('school_id', schoolId).order('id')),
+      supabase.from('lesson_plans').select('*').eq('school_id', schoolId).order('plan_number'),
     ])
     setTeachers(ts ?? []); setCourses(crs ?? []); setIndicators(inds ?? [])
     setStudents(stds ?? []); setTests(tst ?? []); setTestIndicators(ti ?? []); setAllScores(sc)
-    setTestItems(items); setAllResponses(resp)
+    setTestItems(items); setAllResponses(resp); setLessonPlans(lps ?? [])
     const session = getSession()
     const isTeacher = session?.role === 'teacher'
     setIsTeacherRole(isTeacher)
@@ -168,6 +170,7 @@ export default function TestsPage() {
       school_id: schoolId,
       title: draft.title.trim(), subject: draft.subject, type: draft.type,
       max_score: Number(draft.maxScore), test_date: draft.date,
+      lesson_plan_id: draft.lessonPlanId || null,
     }).select().single()
     if (error) { setSaving(false); alert(`สร้างแบบทดสอบไม่สำเร็จ: ${error.message}`); return }
     if (data && draftIndicators.size > 0) {
@@ -176,7 +179,7 @@ export default function TestsPage() {
       )
     }
     setSaving(false); setCreating(false)
-    setDraft({ title: '', subject: draft.subject, type: 'quiz', maxScore: '20', date: new Date().toISOString().slice(0, 10) })
+    setDraft({ title: '', subject: draft.subject, type: 'quiz', maxScore: '20', date: new Date().toISOString().slice(0, 10), lessonPlanId: '' })
     setDraftIndicators(new Set())
     loadAll()
   }
@@ -260,6 +263,11 @@ export default function TestsPage() {
   }
 
   const courseName = (key: string) => courses.find(c => c.subject_key === key)?.name ?? key
+  const planLabel = (lessonPlanId: string | null) => {
+    if (!lessonPlanId) return null
+    const p = lessonPlans.find(lp => lp.id === lessonPlanId)
+    return p ? `แผนที่ ${p.plan_number} — ${p.topic}` : null
+  }
   const scoresOf = (testId: string) => allScores.filter(s => s.test_id === testId)
   const itemsOf = (testId: string) => testItems.filter(i => i.test_id === testId).sort((a, b) => a.item_no - b.item_no)
   const indicatorCodes = (testId: string) =>
@@ -340,6 +348,11 @@ export default function TestsPage() {
             <span className="text-xs text-gray-400">{courseName(activeTest.subject)} · เต็ม {activeTest.max_score}</span>
           </div>
           <h2 className="text-base font-bold text-gray-900 mt-1">{activeTest.title}</h2>
+          {planLabel(activeTest.lesson_plan_id) && (
+            <Link href={`/teacher/lesson-plans/${activeTest.lesson_plan_id}`} className="text-xs text-teal-600 hover:underline">
+              🔗 {planLabel(activeTest.lesson_plan_id)}
+            </Link>
+          )}
           <div className="flex flex-wrap gap-1 mt-1.5">
             {indicatorCodes(activeTest.id).map(c => (
               <span key={c} className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-mono">{c}</span>
@@ -685,6 +698,16 @@ export default function TestsPage() {
               ))}
             </select>
           </div>
+          <label className="block text-xs text-gray-500">
+            ผูกกับแผนการสอน (ถ้ามี — ใช้ติดตามแผนการประเมินของแผนนั้น)
+            <select value={draft.lessonPlanId} onChange={e => setDraft(d => ({ ...d, lessonPlanId: e.target.value }))}
+              className="w-full mt-1 text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300">
+              <option value="">— ไม่ผูก —</option>
+              {lessonPlans.filter(p => p.subject === draft.subject).map(p => (
+                <option key={p.id} value={p.id}>แผนที่ {p.plan_number} — {p.topic}</option>
+              ))}
+            </select>
+          </label>
           <div className="grid grid-cols-2 gap-2">
             <label className="text-xs text-gray-500">คะแนนเต็ม
               <input type="number" min={1} value={draft.maxScore} onChange={e => setDraft(d => ({ ...d, maxScore: e.target.value }))}
