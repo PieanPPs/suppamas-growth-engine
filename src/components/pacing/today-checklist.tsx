@@ -6,6 +6,7 @@ import { CheckCircle2, Circle, PartyPopper, ListChecks, CalendarCheck, Star } fr
 
 export interface ChecklistModuleItem {
   moduleId: string
+  lessonPlanId: string | null
   subject: string
   title: string
   room: string
@@ -47,7 +48,7 @@ export function TodayChecklist({
             </span>
           ))}
           {modules.map(m => (
-            <span key={`mod-${m.moduleId}-${m.room}`} className="inline-flex items-center gap-1 text-[11px] font-medium bg-white/70 text-green-700 px-2 py-1 rounded-full">
+            <span key={`mod-${m.moduleId}-${m.lessonPlanId ?? ''}-${m.room}`} className="inline-flex items-center gap-1 text-[11px] font-medium bg-white/70 text-green-700 px-2 py-1 rounded-full">
               <CheckCircle2 size={11} /> {m.subject.replace('_', ' ')} {m.room}
             </span>
           ))}
@@ -80,7 +81,8 @@ export function TodayChecklist({
                 <Star size={12} /> บันทึกพฤติกรรม/คะแนน
               </p>
               {pendingModules.map(m => (
-                <Link key={`${m.moduleId}-${m.room}`} href={`/teacher/assessment?module=${m.moduleId}`}
+                <Link key={`${m.moduleId}-${m.lessonPlanId ?? ''}-${m.room}`}
+                  href={m.lessonPlanId ? `/teacher/assessment?lesson_plan_id=${m.lessonPlanId}` : `/teacher/assessment?module=${m.moduleId}`}
                   className="flex items-center justify-between bg-white/70 hover:bg-white rounded-xl px-3 py-2 transition-colors">
                   <span className="flex items-center gap-2 text-xs text-gray-700">
                     <Circle size={13} className="text-amber-400 flex-shrink-0" />

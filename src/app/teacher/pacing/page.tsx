@@ -78,15 +78,16 @@ export default function PacingPage() {
       setHomeworkTasks(new Map((tasks ?? []).map((t: HomeworkTask) => [t.module_id, t])))
       setAllStudents((students ?? []) as Pick<Student, 'id' | 'class_name'>[])
 
-      // checklist: which (module, classroom) pairs already got an exit-ticket score today —
-      // scoped by room, not just by module, so a forgotten second classroom doesn't get hidden
-      // behind a different classroom's completed one.
+      // checklist: which (lesson-plan hour, classroom) pairs already got an exit-ticket score
+      // today — keyed by lesson_plan_id (falls back to module_id for legacy rows with none) and
+      // scoped by room, so a forgotten hour/classroom doesn't get hidden behind a different one
+      // that was actually recorded.
       const today = todayDateStr()
       const classNameByStudent = new Map((students ?? []).map((st: Pick<Student, 'id' | 'class_name'>) => [st.id, st.class_name]))
       setAssessedTodayKeys(new Set(
         (assessments ?? [])
           .filter((a: StudentAssessment) => String(a.created_at).slice(0, 10) === today)
-          .map((a: StudentAssessment) => `${a.module_id}::${classNameByStudent.get(a.student_id) ?? ''}`)
+          .map((a: StudentAssessment) => `${a.lesson_plan_id ?? a.module_id}::${classNameByStudent.get(a.student_id) ?? ''}`)
       ))
       // checklist: which classrooms have at least one attendance row today (touch-only-exceptions
       // model means "no rows" can also mean "checked, everyone present" — worded softly in the UI)
@@ -244,17 +245,27 @@ export default function PacingPage() {
     .map(subject => ({ subject, mods: weekModules.filter(m => m.subject === subject) }))
     .filter(g => g.mods.length > 0)
 
-  // "วันนี้ยังไม่ได้ทำอะไรบ้าง" — เฉพาะโมดูล/ห้องที่ active สัปดาห์นี้จริง ไม่ใช่ทุกโมดูลในระบบ
-  // เช็คทีละห้อง × ทีละโมดูล เพราะครูคนเดียวอาจสอนวิชาเดียวกันหลายห้อง — ห้องที่ถูกลืมจริงๆ
-  // ต้องโผล่แยกจากห้องที่ทำแล้ว ไม่ใช่ถูกกลบด้วยห้องอื่นที่ทำแล้วในโมดูลเดียวกัน
+  // "วันนี้ยังไม่ได้ทำอะไรบ้าง" — เช็คระดับ "รายชั่วโมง" ไม่ใช่แค่ระดับหน่วย เพราะหน่วยหนึ่งมีได้
+  // หลายชั่วโมง (หลายแผน) และครูอาจลืม exit ticket แค่บางชั่วโมงเฉพาะเจาะจง ไม่ใช่ทั้งหน่วย —
+  // ใช้เฉพาะแผนที่ planned_week ตรงสัปดาห์นี้จริง (ไม่ใช่ทุกชั่วโมงตลอดทั้งหน่วยหลายสัปดาห์)
+  // และเช็คแยกทีละห้องเหมือนเดิม เพื่อไม่ให้ห้องหนึ่งที่ทำแล้วไปกลบห้องอื่นที่ลืม
   const currentWeekModules = visibleModules.filter(m => weekOfLesson(m, currentWeek) != null)
   const checklistRoomsForAssess = boundRooms.length > 0 ? boundRooms : allRoomNames
-  const checklistModules = currentWeekModules.flatMap(m =>
-    checklistRoomsForAssess.map(room => ({
-      moduleId: m.id, subject: m.subject, title: m.title, room,
-      doneToday: assessedTodayKeys.has(`${m.id}::${room}`),
-    }))
-  )
+  const checklistModules = currentWeekModules.flatMap(m => {
+    const lps = (lessonPlansByModule.get(m.id) ?? [])
+      .filter(lp => (lp.planned_week ?? m.planned_week) === currentWeek)
+    // โมดูลที่ยังไม่มีแผนรายชั่วโมงเลย — fallback เป็นระดับโมดูลเหมือนเดิม
+    const entries = lps.length > 0
+      ? lps.map(lp => ({ key: lp.id, label: `#${lp.plan_number} ${lp.topic}` }))
+      : [{ key: m.id, label: m.title }]
+    return entries.flatMap(entry =>
+      checklistRoomsForAssess.map(room => ({
+        moduleId: m.id, lessonPlanId: entry.key !== m.id ? entry.key : null,
+        subject: m.subject, title: entry.label, room,
+        doneToday: assessedTodayKeys.has(`${entry.key}::${room}`),
+      }))
+    )
+  })
   const checklistRooms = boundRooms.map(room => ({ room, doneToday: attendanceRoomsToday.has(room) }))
 
   return (
