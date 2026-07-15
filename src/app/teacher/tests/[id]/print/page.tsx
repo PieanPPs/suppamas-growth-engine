@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Test, TestItem, Course, School } from '@/lib/types'
+import { Test, TestItem, Course, School, Indicator } from '@/lib/types'
 import { getSchoolId } from '@/lib/school'
 import { fetchLogoForDocx } from '@/lib/lesson-plan-docx'
 import { Loader2, Printer, ArrowLeft, FileText } from 'lucide-react'
@@ -23,6 +23,7 @@ export default function PrintExamPage() {
   const [items, setItems] = useState<TestItem[]>([])
   const [course, setCourse] = useState<Course | null>(null)
   const [school, setSchool] = useState<School | null>(null)
+  const [indicators, setIndicators] = useState<Indicator[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
 
@@ -37,8 +38,12 @@ export default function PrintExamPage() {
       setItems(it ?? [])
       setSchool(sc as School)
       if (t) {
-        const { data: c } = await supabase.from('courses').select('*').eq('subject_key', t.subject).single()
+        const [{ data: c }, { data: inds }] = await Promise.all([
+          supabase.from('courses').select('*').eq('subject_key', t.subject).single(),
+          supabase.from('indicators').select('*').eq('school_id', schoolId).eq('subject', t.subject),
+        ])
         setCourse(c)
+        setIndicators(inds ?? [])
       }
       setLoading(false)
     }
@@ -49,12 +54,27 @@ export default function PrintExamPage() {
     ? supabase.storage.from('school-assets').getPublicUrl(school.logo_path).data.publicUrl
     : null
 
-  // answer key grouped by indicator
-  const byIndicator = new Map<string, TestItem[]>()
+  // มาตรฐานเดียวกันแต่รหัสซ้ำ (เช่น "ม.1/1") คือคนละตัวชี้วัดกัน — จับคู่ (code, standard) ก่อน
+  // ถ้าข้อนั้นไม่มี standard บันทึกไว้ (แผนเก่า/AI ไม่ได้ระบุ) ค่อย fallback เดารหัสเปล่า แต่ถ้ารหัส
+  // นั้นมีมากกว่า 1 มาตรฐานในวิชานี้ ก็เดาไม่ได้จริง ๆ ให้ปล่อยว่างดีกว่าโชว์ผิดตัว
+  function describeIndicator(code: string, standard: string | null): { standard: string | null; description: string | null } {
+    if (standard) {
+      const found = indicators.find(i => i.code === code && i.standard === standard)
+      return { standard, description: found?.description ?? null }
+    }
+    const matches = indicators.filter(i => i.code === code)
+    return matches.length === 1 ? { standard: matches[0].standard, description: matches[0].description } : { standard: null, description: null }
+  }
+
+  // answer key grouped by (indicator code, standard) — not by bare code, since the same code
+  // can be a completely different indicator under a different standard
+  const byIndicator = new Map<string, { code: string; standard: string | null; description: string | null; items: TestItem[] }>()
   items.forEach(it => {
-    const key = it.indicator_code ?? 'ไม่ระบุตัวชี้วัด'
-    if (!byIndicator.has(key)) byIndicator.set(key, [])
-    byIndicator.get(key)!.push(it)
+    const code = it.indicator_code ?? 'ไม่ระบุตัวชี้วัด'
+    const { standard, description } = it.indicator_code ? describeIndicator(it.indicator_code, it.standard) : { standard: null, description: null }
+    const key = `${code}::${standard ?? ''}`
+    if (!byIndicator.has(key)) byIndicator.set(key, { code, standard, description, items: [] })
+    byIndicator.get(key)!.items.push(it)
   })
 
   // ชุดข้อสอบอาจไม่ใช่ปรนัยล้วน (ถูก/ผิด เติมคำ อัตนัย) — ปรับคำชี้แจงและรูปแบบเฉลยตาม
@@ -167,12 +187,18 @@ export default function PrintExamPage() {
             new TableCell({ borders: CELL_THIN, width: { size: 15, type: WidthType.PERCENTAGE }, children: [line('จำนวน', { bold: true, center: true })] }),
           ]
         }),
-        ...Array.from(byIndicator.entries()).map(([code, list]) =>
+        ...Array.from(byIndicator.values()).map(row =>
           new TableRow({
             children: [
-              new TableCell({ borders: CELL_THIN, width: { size: 35, type: WidthType.PERCENTAGE }, children: [line(code)] }),
-              new TableCell({ borders: CELL_THIN, width: { size: 50, type: WidthType.PERCENTAGE }, children: [line(list.map(i => i.item_no).join(', '))] }),
-              new TableCell({ borders: CELL_THIN, width: { size: 15, type: WidthType.PERCENTAGE }, children: [line(String(list.length), { center: true })] }),
+              new TableCell({
+                borders: CELL_THIN, width: { size: 35, type: WidthType.PERCENTAGE },
+                children: [
+                  line(`${row.code}${row.standard ? ` (${row.standard})` : ''}`, { bold: true }),
+                  ...(row.description ? [line(row.description, { size: 12 })] : []),
+                ],
+              }),
+              new TableCell({ borders: CELL_THIN, width: { size: 50, type: WidthType.PERCENTAGE }, children: [line(row.items.map(i => i.item_no).join(', '))] }),
+              new TableCell({ borders: CELL_THIN, width: { size: 15, type: WidthType.PERCENTAGE }, children: [line(String(row.items.length), { center: true })] }),
             ]
           })
         )
@@ -351,11 +377,14 @@ export default function PrintExamPage() {
               </tr>
             </thead>
             <tbody>
-              {Array.from(byIndicator.entries()).map(([code, list]) => (
-                <tr key={code}>
-                  <td className="border border-gray-300 px-2 py-1 font-mono">{code}</td>
-                  <td className="border border-gray-300 px-2 py-1">{list.map(i => i.item_no).join(', ')}</td>
-                  <td className="border border-gray-300 px-2 py-1 text-center">{list.length}</td>
+              {Array.from(byIndicator.entries()).map(([key, row]) => (
+                <tr key={key}>
+                  <td className="border border-gray-300 px-2 py-1 font-mono">
+                    {row.code}{row.standard ? ` (${row.standard})` : ''}
+                    {row.description && <div className="font-sans text-gray-500 font-normal mt-0.5">{row.description}</div>}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-1">{row.items.map(i => i.item_no).join(', ')}</td>
+                  <td className="border border-gray-300 px-2 py-1 text-center">{row.items.length}</td>
                 </tr>
               ))}
             </tbody>

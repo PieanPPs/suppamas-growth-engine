@@ -169,6 +169,9 @@ export interface ParsedExamItem {
   choice_d: string | null
   answer: string | null
   indicator_code: string | null
+  // parsed from "(มาตรฐาน ...)" in the AI's ตัวชี้วัด line, per item — same reason as
+  // TestItem.standard: the bare code alone can't tell two same-numbered indicators apart.
+  standard: string | null
 }
 
 const LABELS: { key: keyof ParsedExamItem | 'no'; re: RegExp }[] = [
@@ -188,6 +191,13 @@ const LABELS: { key: keyof ParsedExamItem | 'no'; re: RegExp }[] = [
 function normalizeIndicatorCode(raw: string): string {
   const m = raw.match(/[ปม]\.\d+\/\d+/)
   return m ? m[0] : raw.trim()
+}
+
+/** ดึงชื่อมาตรฐาน (เช่น "ต 1.2") จากวงเล็บที่ AI เขียนต่อท้ายรหัสในบรรทัด "ตัวชี้วัด:" —
+ * เก็บแยกจาก indicator_code เพื่อให้แยกตัวชี้วัดที่ใช้เลขเดียวกันแต่มาตรฐานต่างกันได้ */
+function extractStandard(raw: string): string | null {
+  const m = raw.match(/มาตรฐาน\s*([^)]+)\)?/)
+  return m ? m[1].trim() : null
 }
 
 /** ถ้าเฉลยขึ้นต้นด้วยตัวเลือกปรนัยตามด้วยตัวคั่น/จบบรรทัด (เช่น "ก" "ข." "ค) เพราะ...") เก็บแค่ตัวอักษร — กัน AI แถมคำอธิบายท้ายเฉลย */
@@ -251,7 +261,7 @@ export function parseExamText(text: string): { items: ParsedExamItem[]; warnings
   for (const block of blocks) {
     const item: ParsedExamItem = {
       item_no: 0, question: '', choice_a: null, choice_b: null,
-      choice_c: null, choice_d: null, answer: null, indicator_code: null,
+      choice_c: null, choice_d: null, answer: null, indicator_code: null, standard: null,
     }
     let lastField: keyof ParsedExamItem | null = null
     let matchedAny = false
@@ -286,7 +296,10 @@ export function parseExamText(text: string): { items: ParsedExamItem[]; warnings
     if (!matchedAny || !item.question) continue
     if (!item.item_no) item.item_no = items.length + 1
     if (item.answer) item.answer = normalizeAnswer(item.answer)
-    if (item.indicator_code) item.indicator_code = normalizeIndicatorCode(item.indicator_code)
+    if (item.indicator_code) {
+      item.standard = extractStandard(item.indicator_code)
+      item.indicator_code = normalizeIndicatorCode(item.indicator_code)
+    }
     if (!item.answer) warnings.push(`ข้อ ${item.item_no}: ไม่พบเฉลย`)
     items.push(item)
   }

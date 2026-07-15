@@ -334,9 +334,16 @@ export default function TestsPage() {
     await supabase.from('test_items').delete().eq('test_id', activeTest.id)
     if (parsed.length) {
       await supabase.from('test_items').insert(parsed.map(p => ({ test_id: activeTest.id, ...p })))
-      // sync ตัวชี้วัดของข้อสอบให้ตรงกับรหัสที่พบรายข้อ
-      const codes = Array.from(new Set(parsed.map(p => p.indicator_code).filter(Boolean))) as string[]
-      const matched = indicators.filter(i => i.subject === activeTest.subject && codes.includes(i.code))
+      // sync ตัวชี้วัดของข้อสอบให้ตรงกับรายข้อ — ถ้า AI ระบุมาตรฐานมาด้วยให้จับคู่ (code, standard)
+      // แม่นเป๊ะ ถ้าไม่ได้ระบุ (แผนเก่า/AI ไม่ได้ใส่) ค่อย fallback เทียบแค่รหัสเปล่าเหมือนเดิม
+      const withStandard = new Set(
+        parsed.filter(p => p.indicator_code && p.standard).map(p => `${p.indicator_code}::${p.standard}`)
+      )
+      const codeOnly = new Set(
+        parsed.filter(p => p.indicator_code && !p.standard).map(p => p.indicator_code as string)
+      )
+      const matched = indicators.filter(i => i.subject === activeTest.subject &&
+        (withStandard.has(`${i.code}::${i.standard}`) || codeOnly.has(i.code)))
       const existing = new Set(testIndicators.filter(ti => ti.test_id === activeTest.id).map(ti => ti.indicator_id))
       const missing = matched.filter(i => !existing.has(i.id))
       if (missing.length) {

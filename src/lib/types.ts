@@ -91,6 +91,9 @@ export interface TestItem {
   choice_d: string | null
   answer: string | null
   indicator_code: string | null
+  // the same code is reused across unrelated มาตรฐาน within a subject — standard disambiguates
+  // which specific indicator this item targets. Null on rows imported before this field existed.
+  standard: string | null
 }
 
 export interface TestItemResponse {
