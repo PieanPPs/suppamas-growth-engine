@@ -36,6 +36,14 @@ function normName(s: string): string {
   return s.replace(/เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.|นาย|น\.ส\./g, '').replace(/\s+/g, '')
 }
 
+/** pull indicator short-codes (e.g. "ม.1/3", "ป.3/1") out of a lesson plan's free-text
+ * indicators_interim/indicators_final fields, so linking a test to a lesson plan can
+ * auto-check the matching indicators instead of making the teacher re-tick them. */
+function extractIndicatorCodes(text: string | null): Set<string> {
+  if (!text) return new Set()
+  return new Set(text.match(/[ปม]\.\d+\/\d+/g) ?? [])
+}
+
 interface PastedRow { ident: string; score: number; studentId: string | null; studentName: string | null }
 
 export default function TestsPage() {
@@ -62,6 +70,7 @@ export default function TestsPage() {
   const [creating, setCreating] = useState(false)
   const [draft, setDraft] = useState({ title: '', subject: '', type: 'quiz' as TestType, maxScore: '20', date: new Date().toISOString().slice(0, 10), lessonPlanId: '' })
   const [draftIndicators, setDraftIndicators] = useState<Set<string>>(new Set())
+  const [editIndicatorsManually, setEditIndicatorsManually] = useState(false)
   const [saving, setSaving] = useState(false)
 
   // score entry
@@ -135,6 +144,24 @@ export default function TestsPage() {
     ? tests.filter(t => teacher.subjects.includes(t.subject))
     : tests
   const draftSubjectIndicators = indicators.filter(i => i.subject === draft.subject)
+  const draftIndicatorsByStandard = draftSubjectIndicators.reduce((acc, ind) => {
+    (acc[ind.standard] ??= []).push(ind)
+    return acc
+  }, {} as Record<string, Indicator[]>)
+
+  // Linking to a lesson plan implies its indicators — auto-check them instead of making
+  // the teacher re-tick what's already decided in the lesson plan / assessment plan.
+  useEffect(() => {
+    if (!draft.lessonPlanId) { setEditIndicatorsManually(false); return }
+    const lp = lessonPlans.find(p => p.id === draft.lessonPlanId)
+    const codes = new Set([
+      ...extractIndicatorCodes(lp?.indicators_interim ?? null),
+      ...extractIndicatorCodes(lp?.indicators_final ?? null),
+    ])
+    const matched = indicators.filter(i => i.subject === draft.subject && codes.has(i.code))
+    setDraftIndicators(new Set(matched.map(i => i.id)))
+    setEditIndicatorsManually(false)
+  }, [draft.lessonPlanId])
 
   // prefill score inputs from saved scores when opening a test
   useEffect(() => {
@@ -703,7 +730,9 @@ export default function TestsPage() {
             <select value={draft.lessonPlanId} onChange={e => setDraft(d => ({ ...d, lessonPlanId: e.target.value }))}
               className="w-full mt-1 text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300">
               <option value="">— ไม่ผูก —</option>
-              {lessonPlans.filter(p => p.subject === draft.subject).map(p => (
+              {/* lesson_plans.subject เก็บชื่อวิชาแบบเต็ม (เช่น "ภาษาอังกฤษ ม.1") ไม่ใช่ subject_key
+                  แบบที่ draft.subject ใช้ — ต้องแปลงผ่าน courseName() ก่อนเทียบ ไม่งั้นจะไม่เจอแผนเลย */}
+              {lessonPlans.filter(p => p.subject === courseName(draft.subject)).map(p => (
                 <option key={p.id} value={p.id}>แผนที่ {p.plan_number} — {p.topic}</option>
               ))}
             </select>
@@ -720,25 +749,55 @@ export default function TestsPage() {
           </div>
 
           <div>
-            <p className="text-xs font-semibold text-gray-500 mb-1.5 flex items-center gap-1">
-              <Target size={13} /> ตัวชี้วัดที่ข้อสอบครอบคลุม ({draftIndicators.size})
-            </p>
-            {draftSubjectIndicators.length === 0 ? (
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs font-semibold text-gray-500 flex items-center gap-1">
+                <Target size={13} /> ตัวชี้วัดที่ข้อสอบครอบคลุม ({draftIndicators.size})
+              </p>
+              {draft.lessonPlanId && draftIndicators.size > 0 && (
+                <button onClick={() => setEditIndicatorsManually(v => !v)}
+                  className="text-[11px] text-blue-600 hover:text-blue-800 font-medium">
+                  {editIndicatorsManually ? 'ใช้ตามแผนการสอน' : 'แก้ไขเอง'}
+                </button>
+              )}
+            </div>
+
+            {draft.lessonPlanId && draftIndicators.size > 0 && !editIndicatorsManually ? (
+              /* ผูกกับแผนการสอนแล้ว — ดึงตัวชี้วัดจากแผนมาให้อัตโนมัติ ไม่ต้องติ๊กซ้ำ */
+              <div className="flex flex-wrap gap-1.5">
+                {draftSubjectIndicators.filter(ind => draftIndicators.has(ind.id)).map(ind => (
+                  <span key={ind.id} className="text-[10px] bg-blue-50 text-blue-700 border border-blue-100 px-2 py-1 rounded-lg font-mono">
+                    {ind.code}
+                  </span>
+                ))}
+              </div>
+            ) : draftSubjectIndicators.length === 0 ? (
               <p className="text-xs text-gray-400">วิชานี้ยังไม่มีตัวชี้วัด — เพิ่มได้ที่ โครงสร้างรายวิชา</p>
             ) : (
-              <div className="space-y-1 max-h-44 overflow-y-auto">
-                {draftSubjectIndicators.map(ind => {
-                  const on = draftIndicators.has(ind.id)
-                  return (
-                    <button key={ind.id} onClick={() => setDraftIndicators(prev => {
-                      const next = new Set(prev); if (next.has(ind.id)) next.delete(ind.id); else next.add(ind.id); return next
-                    })}
-                      className={`w-full text-left flex items-start gap-2 rounded-lg px-2.5 py-1.5 border text-xs transition-colors ${on ? 'border-blue-300 bg-blue-100/60' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
-                      <span className={`mt-0.5 w-3.5 h-3.5 rounded flex-shrink-0 border flex items-center justify-center text-[9px] ${on ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-300'}`}>{on ? '✓' : ''}</span>
-                      <span><span className="font-mono text-gray-500">{ind.code}</span> <span className="text-gray-700">{ind.description}</span></span>
-                    </button>
-                  )
-                })}
+              <div className="space-y-2.5 max-h-52 overflow-y-auto">
+                {Object.entries(draftIndicatorsByStandard).map(([standard, inds]) => (
+                  <div key={standard}>
+                    <p className="text-[11px] font-bold text-gray-400 mb-1">มาตรฐาน {standard}</p>
+                    <div className="space-y-1">
+                      {inds.map(ind => {
+                        const on = draftIndicators.has(ind.id)
+                        return (
+                          <button key={ind.id} onClick={() => setDraftIndicators(prev => {
+                            const next = new Set(prev); if (next.has(ind.id)) next.delete(ind.id); else next.add(ind.id); return next
+                          })}
+                            className={`w-full text-left flex items-start gap-2 rounded-lg px-2.5 py-1.5 border text-xs transition-colors ${on ? 'border-blue-300 bg-blue-100/60' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                            <span className={`mt-0.5 w-3.5 h-3.5 rounded flex-shrink-0 border flex items-center justify-center text-[9px] ${on ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-300'}`}>{on ? '✓' : ''}</span>
+                            <span className="flex-1">
+                              <span className="font-mono text-gray-500">{ind.code}</span> <span className="text-gray-700">{ind.description}</span>
+                            </span>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${ind.type === 'interim' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}>
+                              {ind.type === 'interim' ? 'ระหว่างทาง' : 'ปลายทาง'}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
