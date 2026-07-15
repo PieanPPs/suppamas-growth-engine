@@ -17,6 +17,13 @@ export function ImportItems({
   const [text, setText] = useState('')
   const [saving, setSaving] = useState(false)
   const { items, warnings } = useMemo(() => parseExamText(text), [text])
+  // สรุปจำนวนข้อต่อตัวชี้วัดที่แปลงได้จริง — ให้ครูเทียบกับที่สั่งไว้ใน Prompt Kit ก่อนนำเข้า
+  // เพราะ AI ไม่ได้ทำตามจำนวนที่กำหนดเป๊ะเสมอไป
+  const tally = useMemo(() => {
+    const counts = new Map<string, number>()
+    items.forEach(it => { if (it.indicator_code) counts.set(it.indicator_code, (counts.get(it.indicator_code) ?? 0) + 1) })
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])
+  }, [items])
 
   async function apply() {
     setSaving(true)
@@ -57,6 +64,16 @@ export function ImportItems({
               <p className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
                 <FileText size={13} /> อ่านได้ {items.length} ข้อ
               </p>
+              {tally.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {tally.map(([code, n]) => (
+                    <span key={code} className="text-[10px] font-mono bg-blue-50 text-blue-700 border border-blue-100 px-1.5 py-0.5 rounded-full">
+                      {code} × {n}
+                    </span>
+                  ))}
+                  <span className="text-[10px] text-gray-400">— เทียบกับจำนวนที่สั่งใน Prompt Kit ก่อนกดนำเข้า</span>
+                </div>
+              )}
               <div className="space-y-1 max-h-44 overflow-y-auto">
                 {items.map(it => (
                   <div key={it.item_no} className="flex items-start gap-2 bg-gray-50 rounded-lg px-2.5 py-1.5 text-xs">

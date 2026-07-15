@@ -29,6 +29,7 @@ export const MATH_PLAIN_TEXT_RULE =
 export interface ExamPromptOptions {
   subjectName: string
   grade?: string | null
+  topic?: string | null  // ชื่อเรื่อง/หัวข้อ — ดึงจากแผนการสอนที่ผูกกับข้อสอบนี้ (ถ้ามี)
   count: number
   // standard/type are optional so callers that only have bare {code, description} (e.g. the
   // NT-cycle targeted-practice prompt) still compile — when present they disambiguate, since
@@ -142,7 +143,7 @@ ${mcDistributionRules}
 
   return `คุณเป็นครูผู้เชี่ยวชาญการออกข้อสอบตามหลักสูตรแกนกลางของไทย
 ช่วยสร้าง${cfg.title}
-วิชา: ${opts.subjectName}${opts.grade ? ` ระดับชั้น ${opts.grade}` : ''}
+วิชา: ${opts.subjectName}${opts.grade ? ` ระดับชั้น ${opts.grade}` : ''}${opts.topic ? `\nเรื่อง: ${opts.topic}` : ''}
 ครอบคลุมตัวชี้วัดต่อไปนี้ ตามจำนวนข้อที่กำหนดต่อตัวชี้วัดอย่างเคร่งครัด (ผลรวมต้องเท่ากับ ${opts.count} ข้อพอดี):
 ${indicatorLines}
 ${duplicateWarning}${styleBlock}

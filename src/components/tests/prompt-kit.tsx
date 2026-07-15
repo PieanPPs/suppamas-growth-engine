@@ -32,11 +32,13 @@ function distributeCounts(weights: number[], total: number): number[] {
 export function PromptKit({
   subjectName,
   grade,
+  topic,
   indicators,
   onClose,
 }: {
   subjectName: string
   grade?: string | null
+  topic?: string | null
   indicators: IndicatorInput[]
   onClose: () => void
 }) {
@@ -63,10 +65,10 @@ export function PromptKit({
 
   const prompt = useMemo(
     () => buildExamPrompt({
-      subjectName, grade, count, indicators: weightedIndicators, qtype,
+      subjectName, grade, topic, count, indicators: weightedIndicators, qtype,
       styles: EXAM_STYLES.filter(s => selectedStyles.has(s.key)).map(s => s.text),
     }),
-    [subjectName, grade, count, weightedIndicators, qtype, selectedStyles]
+    [subjectName, grade, topic, count, weightedIndicators, qtype, selectedStyles]
   )
 
   function toggleStyle(key: string) {

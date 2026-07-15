@@ -610,6 +610,7 @@ export default function TestsPage() {
             <PromptKit
               subjectName={courseName(activeTest.subject)}
               grade={courses.find(c => c.subject_key === activeTest.subject)?.grade}
+              topic={activeTest.lesson_plan_id ? lessonPlans.find(lp => lp.id === activeTest.lesson_plan_id)?.topic : null}
               indicators={promptIndicators(activeTest.id, activeTest.subject)}
               onClose={() => setPromptOpen(false)}
             />
