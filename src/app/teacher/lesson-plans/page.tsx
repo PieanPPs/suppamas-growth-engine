@@ -169,7 +169,7 @@ export default function LessonPlansPage() {
   )
 
   return (
-    <div className="space-y-4 pb-8">
+    <div className={`space-y-4 ${selectMode && selectedIds.size > 0 ? 'pb-40' : 'pb-8'}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
