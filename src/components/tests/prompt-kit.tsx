@@ -13,7 +13,7 @@ export function PromptKit({
 }: {
   subjectName: string
   grade?: string | null
-  indicators: { code: string; description: string }[]
+  indicators: { code: string; description: string; standard?: string; type?: 'interim' | 'final' }[]
   onClose: () => void
 }) {
   const [count, setCount] = useState(30)

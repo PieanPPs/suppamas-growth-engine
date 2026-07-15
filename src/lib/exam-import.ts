@@ -30,16 +30,32 @@ export interface ExamPromptOptions {
   subjectName: string
   grade?: string | null
   count: number
-  indicators: { code: string; description: string }[]
+  // standard/type are optional so callers that only have bare {code, description} (e.g. the
+  // NT-cycle targeted-practice prompt) still compile — when present they disambiguate, since
+  // the same short code (e.g. "ม.1/1") is reused across unrelated มาตรฐาน with completely
+  // different content, and generative AI needs the full context to write the right question.
+  indicators: { code: string; description: string; standard?: string; type?: 'interim' | 'final' }[]
   qtype?: ExamQType
   styles?: string[]  // ข้อความสไตล์ที่เลือก (จาก EXAM_STYLES.text)
 }
 
 export function buildExamPrompt(opts: ExamPromptOptions): string {
   const qtype = opts.qtype ?? 'mc4'
+  const typeLabel = (t?: 'interim' | 'final') => t === 'interim' ? 'ระหว่างทาง' : t === 'final' ? 'ปลายทาง' : null
   const indicatorLines = opts.indicators.length
-    ? opts.indicators.map(i => `- ${i.code}: ${i.description}`).join('\n')
+    ? opts.indicators.map(i => {
+        const tag = [typeLabel(i.type), i.standard ? `มาตรฐาน ${i.standard}` : null].filter(Boolean).join(' · ')
+        return `- ${tag ? `[${tag}] ` : ''}${i.code}: ${i.description}`
+      }).join('\n')
     : '- (ตามเนื้อหาวิชา)'
+  // ตรวจว่ามีรหัสซ้ำกันข้ามมาตรฐานในชุดนี้หรือไม่ — ถ้ามีต้องเตือน AI ชัด ๆ ไม่งั้นมักสับสน
+  // เอาคำอธิบายของตัวชี้วัดคนละตัวมาปนกัน ทั้งที่เลขบังเอิญตรงกัน
+  const codeCounts = new Map<string, number>()
+  opts.indicators.forEach(i => codeCounts.set(i.code, (codeCounts.get(i.code) ?? 0) + 1))
+  const hasDuplicateCodes = Array.from(codeCounts.values()).some(n => n > 1)
+  const duplicateWarning = hasDuplicateCodes
+    ? '\n**คำเตือน**: รายการด้านบนมีรหัสตัวชี้วัดซ้ำกันแต่อยู่คนละมาตรฐาน/คนละประเภท (ระหว่างทาง-ปลายทาง) — เป็นตัวชี้วัดคนละตัวที่บังเอิญใช้เลขเดียวกัน ให้ยึดตามคำอธิบายและมาตรฐานที่ระบุไว้ของแต่ละรายการเท่านั้น ห้ามสลับสับสนเนื้อหากัน\n'
+    : ''
   const ind1 = opts.indicators[0]?.code ?? 'ป.5/1'
   const ind2 = opts.indicators[1]?.code ?? ind1
 
@@ -106,7 +122,7 @@ ${mcDistributionRules}
 วิชา: ${opts.subjectName}${opts.grade ? ` ระดับชั้น ${opts.grade}` : ''}
 ครอบคลุมตัวชี้วัดต่อไปนี้ และกระจายจำนวนข้อให้ครบทุกตัวชี้วัด:
 ${indicatorLines}
-${styleBlock}
+${duplicateWarning}${styleBlock}
 ข้อกำหนดสำคัญ:
 - ภาษาเหมาะกับวัยผู้เรียน โจทย์ชัดเจน ตัวลวงสมเหตุสมผล
 ${MATH_PLAIN_TEXT_RULE}

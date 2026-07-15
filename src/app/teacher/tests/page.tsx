@@ -326,7 +326,7 @@ export default function TestsPage() {
       .map(ti => indicators.find(i => i.id === ti.indicator_id))
       .filter(Boolean) as Indicator[]
     return (ticked.length ? ticked : indicators.filter(i => i.subject === subject))
-      .map(i => ({ code: i.code, description: i.description }))
+      .map(i => ({ code: i.code, description: i.description, standard: i.standard, type: i.type }))
   }
 
   async function importExamItems(parsed: ParsedExamItem[]) {
