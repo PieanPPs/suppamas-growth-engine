@@ -34,18 +34,38 @@ export interface ExamPromptOptions {
   // NT-cycle targeted-practice prompt) still compile — when present they disambiguate, since
   // the same short code (e.g. "ม.1/1") is reused across unrelated มาตรฐาน with completely
   // different content, and generative AI needs the full context to write the right question.
-  indicators: { code: string; description: string; standard?: string; type?: 'interim' | 'final' }[]
+  // weight controls how many of the total `count` questions this indicator should get,
+  // relative to the others (default 1 = equal split) — lets a teacher favor ปลายทาง over
+  // ระหว่างทาง, the reverse, or hand-weight one specific indicator.
+  indicators: { code: string; description: string; standard?: string; type?: 'interim' | 'final'; weight?: number }[]
   qtype?: ExamQType
   styles?: string[]  // ข้อความสไตล์ที่เลือก (จาก EXAM_STYLES.text)
+}
+
+/** Split `total` items across indicators proportionally to their weight (largest-remainder
+ * method so every indicator's count is a whole number and they sum to exactly `total`). */
+function distributeCounts(weights: number[], total: number): number[] {
+  const safeWeights = weights.map(w => Math.max(0, w))
+  const sum = safeWeights.reduce((a, b) => a + b, 0)
+  if (safeWeights.length === 0 || sum <= 0) return safeWeights.map(() => 0)
+  const raw = safeWeights.map(w => (w / sum) * total)
+  const counts = raw.map(Math.floor)
+  let remaining = total - counts.reduce((a, b) => a + b, 0)
+  const byFraction = raw
+    .map((r, i) => ({ i, frac: r - Math.floor(r) }))
+    .sort((a, b) => b.frac - a.frac)
+  for (let k = 0; k < remaining && k < byFraction.length; k++) counts[byFraction[k].i]++
+  return counts
 }
 
 export function buildExamPrompt(opts: ExamPromptOptions): string {
   const qtype = opts.qtype ?? 'mc4'
   const typeLabel = (t?: 'interim' | 'final') => t === 'interim' ? 'ระหว่างทาง' : t === 'final' ? 'ปลายทาง' : null
+  const perIndicatorCounts = distributeCounts(opts.indicators.map(i => i.weight ?? 1), opts.count)
   const indicatorLines = opts.indicators.length
-    ? opts.indicators.map(i => {
+    ? opts.indicators.map((i, idx) => {
         const tag = [typeLabel(i.type), i.standard ? `มาตรฐาน ${i.standard}` : null].filter(Boolean).join(' · ')
-        return `- ${tag ? `[${tag}] ` : ''}${i.code}: ${i.description}`
+        return `- ${tag ? `[${tag}] ` : ''}${i.code}: ${i.description} → **${perIndicatorCounts[idx]} ข้อ**`
       }).join('\n')
     : '- (ตามเนื้อหาวิชา)'
   // ตรวจว่ามีรหัสซ้ำกันข้ามมาตรฐานในชุดนี้หรือไม่ — ถ้ามีต้องเตือน AI ชัด ๆ ไม่งั้นมักสับสน
@@ -56,11 +76,14 @@ export function buildExamPrompt(opts: ExamPromptOptions): string {
   const duplicateWarning = hasDuplicateCodes
     ? '\n**คำเตือน**: รายการด้านบนมีรหัสตัวชี้วัดซ้ำกันแต่อยู่คนละมาตรฐาน/คนละประเภท (ระหว่างทาง-ปลายทาง) — เป็นตัวชี้วัดคนละตัวที่บังเอิญใช้เลขเดียวกัน ให้ยึดตามคำอธิบายและมาตรฐานที่ระบุไว้ของแต่ละรายการเท่านั้น ห้ามสลับสับสนเนื้อหากัน\n'
     : ''
-  const ind1 = opts.indicators[0]?.code ?? 'ป.5/1'
-  const ind2 = opts.indicators[1]?.code ?? ind1
+  const ind1Full = opts.indicators[0]
+  const ind2Full = opts.indicators[1] ?? ind1Full
+  const indLabel = (i?: typeof ind1Full) => i
+    ? `${i.code}${i.standard ? ` (มาตรฐาน ${i.standard})` : ''}`
+    : 'ป.5/1'
 
   const mcExample = (no: number, ans: string) => `ข้อ: ${no}
-ตัวชี้วัด: ${no === 1 ? ind1 : ind2}
+ตัวชี้วัด: ${indLabel(no === 1 ? ind1Full : ind2Full)}
 คำถาม: (โจทย์ข้อที่ ${no})
 ก: (ตัวเลือก)
 ข: (ตัวเลือก)
@@ -69,7 +92,7 @@ export function buildExamPrompt(opts: ExamPromptOptions): string {
 เฉลย: ${ans}
 ---`
   const plainExample = (no: number, questionHint: string, answerHint: string) => `ข้อ: ${no}
-ตัวชี้วัด: ${no === 1 ? ind1 : ind2}
+ตัวชี้วัด: ${indLabel(no === 1 ? ind1Full : ind2Full)}
 คำถาม: ${questionHint}
 เฉลย: ${answerHint}
 ---`
@@ -120,11 +143,13 @@ ${mcDistributionRules}
   return `คุณเป็นครูผู้เชี่ยวชาญการออกข้อสอบตามหลักสูตรแกนกลางของไทย
 ช่วยสร้าง${cfg.title}
 วิชา: ${opts.subjectName}${opts.grade ? ` ระดับชั้น ${opts.grade}` : ''}
-ครอบคลุมตัวชี้วัดต่อไปนี้ และกระจายจำนวนข้อให้ครบทุกตัวชี้วัด:
+ครอบคลุมตัวชี้วัดต่อไปนี้ ตามจำนวนข้อที่กำหนดต่อตัวชี้วัดอย่างเคร่งครัด (ผลรวมต้องเท่ากับ ${opts.count} ข้อพอดี):
 ${indicatorLines}
 ${duplicateWarning}${styleBlock}
 ข้อกำหนดสำคัญ:
 - ภาษาเหมาะกับวัยผู้เรียน โจทย์ชัดเจน ตัวลวงสมเหตุสมผล
+- **บังคับ**: จำนวนข้อของแต่ละตัวชี้วัดต้องตรงตามที่กำหนดด้านบนเป๊ะๆ ก่อนส่งคำตอบให้นับจำนวนข้อของแต่ละตัวชี้วัดอีกครั้งว่าครบตามที่สั่ง — ห้ามปัดเศษเองหรือแจกจ่ายจำนวนข้อใหม่ตามใจ
+- บรรทัด &ldquo;ตัวชี้วัด:&rdquo; ในแต่ละข้อ ให้เขียนเฉพาะรหัสตัวชี้วัด (เช่น ม.1/1) ตามด้วยวงเล็บชื่อมาตรฐานถ้ามี ห้ามใส่คำอธิบายอื่นต่อในบรรทัดเดียวกัน
 ${MATH_PLAIN_TEXT_RULE}
 ${cfg.rules}
 - ตอบกลับในรูปแบบด้านล่างนี้เท่านั้น ห้ามมีข้อความอื่นนำหน้าหรือต่อท้าย
@@ -156,6 +181,13 @@ const LABELS: { key: keyof ParsedExamItem | 'no'; re: RegExp }[] = [
   // เฉลยเป็นข้อความอิสระ — รองรับทั้งปรนัย (ก/ข/ค/ง) ถูก/ผิด เติมคำ และแนวคำตอบอัตนัย
   { key: 'answer', re: /^เฉลย\s*[:：]?\s*(.+)/ },
 ]
+
+/** เก็บเฉพาะรหัสตัวชี้วัดตัวแรกที่เจอ (เช่น "ม.1/1") ทิ้งวงเล็บชื่อมาตรฐานหรือข้อความอื่นที่ AI
+ * แถมมาต่อท้าย — ต้องเป็นรหัสเปล่าเป๊ะๆ เพราะโค้ดนำเข้าเทียบตรงกับ indicators.code ทุกตัวอักษร */
+function normalizeIndicatorCode(raw: string): string {
+  const m = raw.match(/[ปม]\.\d+\/\d+/)
+  return m ? m[0] : raw.trim()
+}
 
 /** ถ้าเฉลยขึ้นต้นด้วยตัวเลือกปรนัยตามด้วยตัวคั่น/จบบรรทัด (เช่น "ก" "ข." "ค) เพราะ...") เก็บแค่ตัวอักษร — กัน AI แถมคำอธิบายท้ายเฉลย */
 function normalizeAnswer(raw: string): string {
@@ -253,6 +285,7 @@ export function parseExamText(text: string): { items: ParsedExamItem[]; warnings
     if (!matchedAny || !item.question) continue
     if (!item.item_no) item.item_no = items.length + 1
     if (item.answer) item.answer = normalizeAnswer(item.answer)
+    if (item.indicator_code) item.indicator_code = normalizeIndicatorCode(item.indicator_code)
     if (!item.answer) warnings.push(`ข้อ ${item.item_no}: ไม่พบเฉลย`)
     items.push(item)
   }
