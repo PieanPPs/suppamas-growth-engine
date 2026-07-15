@@ -36,12 +36,24 @@ function normName(s: string): string {
   return s.replace(/เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.|นาย|น\.ส\./g, '').replace(/\s+/g, '')
 }
 
-/** pull indicator short-codes (e.g. "ม.1/3", "ป.3/1") out of a lesson plan's free-text
- * indicators_interim/indicators_final fields, so linking a test to a lesson plan can
- * auto-check the matching indicators instead of making the teacher re-tick them. */
-function extractIndicatorCodes(text: string | null): Set<string> {
-  if (!text) return new Set()
-  return new Set(text.match(/[ปม]\.\d+\/\d+/g) ?? [])
+/** The same short-code (e.g. "ม.1/1") is reused across many different มาตรฐาน within one
+ * subject, each with a totally different description — matching on the bare code alone
+ * over-matches (confirmed live: "ม.1/1" alone maps to 8 unrelated indicators under ต 1.1,
+ * 1.2, 1.3, 2.1, 2.2, 3.1, 4.1, 4.2 for ENG_M1). A lesson plan's indicators_interim/final
+ * text has the description written right after the code on the same line, copied verbatim
+ * from the indicators table, so pairing (code, description) instead of code alone
+ * disambiguates correctly without depending on the "มาตรฐาน ..." heading being present. */
+function normalizeForMatch(s: string): string {
+  return s.replace(/\s+/g, '')
+}
+function parseIndicatorLines(text: string | null): { code: string; text: string }[] {
+  if (!text) return []
+  const refs: { code: string; text: string }[] = []
+  for (const rawLine of text.split('\n')) {
+    const m = rawLine.match(/([ปม]\.\d+\/\d+)\s*:?\s*(.+)/)
+    if (m && m[2].trim()) refs.push({ code: m[1], text: m[2].trim() })
+  }
+  return refs
 }
 
 interface PastedRow { ident: string; score: number; studentId: string | null; studentName: string | null }
@@ -154,11 +166,15 @@ export default function TestsPage() {
   useEffect(() => {
     if (!draft.lessonPlanId) { setEditIndicatorsManually(false); return }
     const lp = lessonPlans.find(p => p.id === draft.lessonPlanId)
-    const codes = new Set([
-      ...extractIndicatorCodes(lp?.indicators_interim ?? null),
-      ...extractIndicatorCodes(lp?.indicators_final ?? null),
-    ])
-    const matched = indicators.filter(i => i.subject === draft.subject && codes.has(i.code))
+    const refs = [
+      ...parseIndicatorLines(lp?.indicators_interim ?? null),
+      ...parseIndicatorLines(lp?.indicators_final ?? null),
+    ]
+    const matched = indicators.filter(i => {
+      if (i.subject !== draft.subject) return false
+      const desc = normalizeForMatch(i.description)
+      return refs.some(r => r.code === i.code && desc.includes(normalizeForMatch(r.text).slice(0, 25)))
+    })
     setDraftIndicators(new Set(matched.map(i => i.id)))
     setEditIndicatorsManually(false)
   }, [draft.lessonPlanId])
@@ -297,12 +313,12 @@ export default function TestsPage() {
   }
   const scoresOf = (testId: string) => allScores.filter(s => s.test_id === testId)
   const itemsOf = (testId: string) => testItems.filter(i => i.test_id === testId).sort((a, b) => a.item_no - b.item_no)
-  const indicatorCodes = (testId: string) =>
-    Array.from(new Set(
-      testIndicators.filter(ti => ti.test_id === testId)
-        .map(ti => indicators.find(i => i.id === ti.indicator_id)?.code)
-        .filter(Boolean) as string[]
-    ))
+  // NOT deduped by bare code — the same code (e.g. "ม.1/1") is a different indicator under
+  // each มาตรฐาน, so collapsing on code alone would silently drop distinct indicators.
+  const indicatorRefs = (testId: string) =>
+    testIndicators.filter(ti => ti.test_id === testId)
+      .map(ti => indicators.find(i => i.id === ti.indicator_id))
+      .filter(Boolean) as Indicator[]
 
   // ตัวชี้วัดสำหรับ Prompt Kit: ใช้ที่ติ๊กไว้ ถ้าไม่ติ๊กเลยใช้ทั้งวิชา
   const promptIndicators = (testId: string, subject: string) => {
@@ -381,8 +397,10 @@ export default function TestsPage() {
             </Link>
           )}
           <div className="flex flex-wrap gap-1 mt-1.5">
-            {indicatorCodes(activeTest.id).map(c => (
-              <span key={c} className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-mono">{c}</span>
+            {indicatorRefs(activeTest.id).map(ind => (
+              <span key={ind.id} title={ind.description} className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-mono">
+                {ind.standard} · {ind.code}
+              </span>
             ))}
           </div>
 
@@ -765,8 +783,9 @@ export default function TestsPage() {
               /* ผูกกับแผนการสอนแล้ว — ดึงตัวชี้วัดจากแผนมาให้อัตโนมัติ ไม่ต้องติ๊กซ้ำ */
               <div className="flex flex-wrap gap-1.5">
                 {draftSubjectIndicators.filter(ind => draftIndicators.has(ind.id)).map(ind => (
-                  <span key={ind.id} className="text-[10px] bg-blue-50 text-blue-700 border border-blue-100 px-2 py-1 rounded-lg font-mono">
-                    {ind.code}
+                  <span key={ind.id} title={ind.description}
+                    className="text-[10px] bg-blue-50 text-blue-700 border border-blue-100 px-2 py-1 rounded-lg font-mono">
+                    {ind.standard} · {ind.code}
                   </span>
                 ))}
               </div>
@@ -833,8 +852,10 @@ export default function TestsPage() {
                     )}
                   </p>
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {indicatorCodes(t.id).map(c => (
-                      <span key={c} className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-mono">{c}</span>
+                    {indicatorRefs(t.id).map(ind => (
+                      <span key={ind.id} title={ind.description} className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-mono">
+                        {ind.standard} · {ind.code}
+                      </span>
                     ))}
                   </div>
                 </div>
