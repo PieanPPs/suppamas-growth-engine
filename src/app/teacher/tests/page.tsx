@@ -507,11 +507,22 @@ export default function TestsPage() {
               setExpandedStudent(nextStudent ? nextStudent.id : null)
             }
 
+            // Opening a student's card is the act of grading them in item-toggle mode.
+            // A perfect score never generates a response row (nothing gets tapped), so
+            // without this the score stayed blank forever and got dropped by saveScores().
+            function openStudent() {
+              if (!isExpanded && hasItems && (val === '' || val == null)) {
+                const wrongCount = studentResponses.filter(r => r.correct === false).length
+                setScoreInputs(prev => ({ ...prev, [s.id]: String(activeItems.length - wrongCount) }))
+              }
+              setExpandedStudent(isExpanded ? null : s.id)
+            }
+
             return (
               <div key={s.id} className={`bg-white border rounded-2xl overflow-hidden transition-all ${isExpanded ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-200'}`}>
                 <button
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
-                  onClick={() => setExpandedStudent(isExpanded ? null : s.id)}
+                  onClick={openStudent}
                 >
                   <span className="w-5 text-center text-xs text-gray-400 flex-shrink-0">{i + 1}</span>
                   <div className="flex-1 min-w-0">
